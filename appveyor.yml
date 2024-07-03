@@ -1,0 +1,33 @@
+image: 
+- Visual Studio 2022
+- Ubuntu2204
+
+environment:
+  major: 7
+  minor: 0
+  release: 0
+  app_version: "$(major).$(minor).$(release).$(APPVEYOR_BUILD_NUMBER)"
+
+version: "$(major).$(minor).$(release).{build}"
+
+build_script:
+  - cmd: buildWindows.bat
+  - sh: ./buildLinux.sh
+
+
+after_build:
+  - cmd: createNugetPackage_Windows.bat %app_version%
+  - sh: ./createNugetPackage_Linux.sh $app_version
+  - ps: Get-ChildItem .\CVODES*.nupkg | % { Push-AppveyorArtifact $_.FullName -FileName $_.Name }
+
+skip_tags: true
+
+skip_commits:
+  files:
+    - "*.md"
+
+pull_requests:
+  do_not_increment_build_number: true
+
+nuget:
+  disable_publish_on_pr: true
