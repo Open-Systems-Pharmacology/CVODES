@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,10 +17,9 @@
 module test_utilities
 
     use, intrinsic :: iso_c_binding
-    use fsundials_core_mod
     implicit none
 
-    real(C_DOUBLE), parameter :: SUN_UNIT_ROUNDOFF = epsilon(1.0d0)
+    real(C_DOUBLE), parameter :: UNIT_ROUNDOFF = epsilon(1.0d0)
 
     real(C_DOUBLE) :: NEG_TWO  = -2.0d0
     real(C_DOUBLE) :: NEG_ONE  = -1.0d0
@@ -34,30 +33,7 @@ module test_utilities
     real(C_DOUBLE) :: FIVE     = 5.0d0
     real(C_DOUBLE) :: SIX      = 6.0d0
 
-    type(C_PTR)    :: sunctx
-
 contains
-
-  subroutine Test_Init(comm)
-    implicit none
-    integer(C_INT), value :: comm
-    integer(C_INT)        :: retval
-
-    retval = FSUNContext_Create(comm, sunctx)
-    if (retval /= 0) then
-      print *, 'ERROR in Test_Init: FSUNContext_Create returned nonzero'
-      stop 1
-    end if
-
-  end subroutine
-
-  subroutine Test_Finalize()
-    implicit none
-    integer(C_INT) :: retval
-
-    retval = FSUNContext_Free(sunctx)
-
-  end subroutine
 
   integer(C_INT) function FNEQTOL(a, b, tol) result(nequal)
     implicit none
@@ -79,7 +55,7 @@ contains
 
     if (a /= a) then
       nequal = 1
-    else if ((abs(a-b)/abs(b)) > (10*SUN_UNIT_ROUNDOFF)) then
+    else if ((abs(a-b)/abs(b)) > (10*UNIT_ROUNDOFF)) then
       nequal = 1
     else
       nequal = 0

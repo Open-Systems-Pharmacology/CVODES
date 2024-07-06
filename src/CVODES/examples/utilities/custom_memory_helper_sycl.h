@@ -2,7 +2,7 @@
  * Programmer(s): David J. Gardner @ LLNL
  * -----------------------------------------------------------------
  * SUNDIALS Copyright Start
- * Copyright (c) 2002-2024, Lawrence Livermore National Security
+ * Copyright (c) 2002-2021, Lawrence Livermore National Security
  * and Southern Methodist University.
  * All rights reserved.
  *
@@ -16,16 +16,15 @@
  * -----------------------------------------------------------------*/
 
 #include <cstdlib>
+#include <CL/sycl.hpp>
 #include <sundials/sundials_memory.h>
-#include <sycl/sycl.hpp>
+
+#define MY_QUEUE(h) (*((sycl::queue*)(h->content)))
 
 int MyMemoryHelper_Alloc(SUNMemoryHelper helper, SUNMemory* memptr,
-                         size_t mem_size, SUNMemoryType mem_type, void* queue)
+                         size_t memsize, SUNMemoryType mem_type)
 {
-  if (!queue) return -1;
-  sycl::queue* sycl_queue = static_cast<sycl::queue*>(queue);
-
-  SUNMemory mem = SUNMemoryNewEmpty(helper->sunctx);
+  SUNMemory mem = SUNMemoryNewEmpty();
   if (mem == NULL) return -1;
 
   mem->ptr = NULL;
@@ -33,22 +32,14 @@ int MyMemoryHelper_Alloc(SUNMemoryHelper helper, SUNMemory* memptr,
 
   if (mem_type == SUNMEMTYPE_HOST)
   {
-    mem->ptr = malloc(mem_size);
-    if (mem->ptr == NULL)
-    {
-      free(mem);
-      return -1;
-    }
+    mem->ptr  = malloc(memsize);
+    if (mem->ptr == NULL) { free(mem); return -1; }
     mem->type = SUNMEMTYPE_HOST;
   }
   else if (mem_type == SUNMEMTYPE_DEVICE)
   {
-    mem->ptr = sycl::malloc_device(mem_size, *sycl_queue);
-    if (mem->ptr == NULL)
-    {
-      free(mem);
-      return -1;
-    }
+    mem->ptr = sycl::malloc_device(memsize, MY_QUEUE(helper));
+    if (mem->ptr == NULL) { free(mem); return -1; }
     mem->type = SUNMEMTYPE_DEVICE;
   }
   else
@@ -61,58 +52,86 @@ int MyMemoryHelper_Alloc(SUNMemoryHelper helper, SUNMemory* memptr,
   return 0;
 }
 
-int MyMemoryHelper_Dealloc(SUNMemoryHelper helper, SUNMemory mem, void* queue)
+int MyMemoryHelper_Dealloc(SUNMemoryHelper helper, SUNMemory mem)
 {
-  if (!mem) return 0;
-
-  if (mem->ptr && mem->own)
+  if (mem != NULL)
   {
-    if (!queue) return -1;
-
-    sycl::queue* sycl_queue = static_cast<sycl::queue*>(queue);
-
-    if (mem->type == SUNMEMTYPE_HOST)
+    if (mem->ptr != NULL && mem->own)
     {
-      free(mem->ptr);
-      mem->ptr = NULL;
+      if (mem->type == SUNMEMTYPE_HOST)
+      {
+        free(mem->ptr);
+        mem->ptr = NULL;
+      }
+      else if (mem->type == SUNMEMTYPE_DEVICE)
+      {
+        sycl::free(mem->ptr, MY_QUEUE(helper));
+        mem->ptr = NULL;
+      }
+      else
+      {
+        return -1;
+      }
     }
-    else if (mem->type == SUNMEMTYPE_DEVICE)
-    {
-      sycl::free(mem->ptr, *sycl_queue);
-      mem->ptr = NULL;
-    }
-    else { return -1; }
+
+    free(mem);
   }
-
-  free(mem);
 
   return 0;
 }
 
-int MyMemoryHelper_Copy(SUNMemoryHelper helper, SUNMemory dst, SUNMemory src,
-                        size_t memory_size, void* queue)
+int MyMemoryHelper_Copy(SUNMemoryHelper helper, SUNMemory dst,
+                        SUNMemory src, size_t memory_size)
 {
-  if (!queue) return -1;
-  sycl::queue* sycl_queue = static_cast<sycl::queue*>(queue);
-
   if (src->type == SUNMEMTYPE_HOST && dst->type == SUNMEMTYPE_HOST)
   {
     memcpy(dst->ptr, src->ptr, memory_size);
   }
-  else { sycl_queue->memcpy(dst->ptr, src->ptr, memory_size); }
-  sycl_queue->wait_and_throw();
+  else
+  {
+    MY_QUEUE(helper).memcpy(dst->ptr, src->ptr, memory_size);
+  }
+  MY_QUEUE(helper).wait_and_throw();
   return 0;
 }
 
-SUNMemoryHelper MyMemoryHelper(SUNContext sunctx)
+
+SUNMemoryHelper MyMemoryHelper_Clone(SUNMemoryHelper helper)
 {
-  SUNMemoryHelper helper = SUNMemoryHelper_NewEmpty(sunctx);
+  if (helper == NULL) return NULL;
+
+  SUNMemoryHelper new_helper = SUNMemoryHelper_NewEmpty();
+  if (helper == NULL) return NULL;
+
+  if (SUNMemoryHelper_CopyOps(helper, new_helper)) return NULL;
+
+  new_helper->content = helper->content;
+
+  return new_helper;
+}
+
+int MyMemoryHelper_Destroy(SUNMemoryHelper helper)
+{
+  helper->content = NULL;
+  free(helper->ops);
+  free(helper);
+  return 0;
+}
+
+SUNMemoryHelper MyMemoryHelper(sycl::queue *Q)
+{
+  SUNMemoryHelper helper = SUNMemoryHelper_NewEmpty();
   if (helper == NULL) return NULL;
 
   /* Set the ops */
   helper->ops->alloc   = MyMemoryHelper_Alloc;
   helper->ops->dealloc = MyMemoryHelper_Dealloc;
   helper->ops->copy    = MyMemoryHelper_Copy;
+  helper->ops->clone   = MyMemoryHelper_Clone;
+  helper->ops->destroy = MyMemoryHelper_Destroy;
+
+  /* Attach the sycl queue pointer as the content */
+  helper->content = (void*) Q;
 
   return helper;
 }

@@ -7,7 +7,7 @@
  *                   @ LLNL
  * -----------------------------------------------------------------
  * SUNDIALS Copyright Start
- * Copyright (c) 2002-2024, Lawrence Livermore National Security
+ * Copyright (c) 2002-2021, Lawrence Livermore National Security
  * and Southern Methodist University.
  * All rights reserved.
  *
@@ -21,127 +21,105 @@
  * structures to pass data to threads.
  * -----------------------------------------------------------------*/
 
-#include <math.h> /* define NAN */
-#include <nvector/nvector_pthreads.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sundials/priv/sundials_context_impl.h>
-#include <sundials/priv/sundials_errors_impl.h>
-#include <sundials/sundials_core.h>
 
-#include "sundials/priv/sundials_errors_impl.h"
-#include "sundials/sundials_errors.h"
+#include <nvector/nvector_pthreads.h>
+#include <sundials/sundials_math.h>
+#include <math.h> /* define NAN */
 
-#define ZERO   SUN_RCONST(0.0)
-#define HALF   SUN_RCONST(0.5)
-#define ONE    SUN_RCONST(1.0)
-#define ONEPT5 SUN_RCONST(1.5)
+#define ZERO   RCONST(0.0)
+#define HALF   RCONST(0.5)
+#define ONE    RCONST(1.0)
+#define ONEPT5 RCONST(1.5)
 
 /* Private functions for special cases of vector operations */
-static void VCopy_Pthreads(N_Vector x, N_Vector z);             /* z=x       */
-static void VSum_Pthreads(N_Vector x, N_Vector y, N_Vector z);  /* z=x+y     */
-static void VDiff_Pthreads(N_Vector x, N_Vector y, N_Vector z); /* z=x-y     */
-static void VNeg_Pthreads(N_Vector x, N_Vector z);              /* z=-x      */
-static void VScaleSum_Pthreads(sunrealtype c, N_Vector x, N_Vector y,
-                               N_Vector z); /* z=c(x+y)  */
-static void VScaleDiff_Pthreads(sunrealtype c, N_Vector x, N_Vector y,
-                                N_Vector z); /* z=c(x-y)  */
-static void VLin1_Pthreads(sunrealtype a, N_Vector x, N_Vector y,
-                           N_Vector z); /* z=ax+y    */
-static void VLin2_Pthreads(sunrealtype a, N_Vector x, N_Vector y,
-                           N_Vector z); /* z=ax-y    */
-static void Vaxpy_Pthreads(sunrealtype a, N_Vector x, N_Vector y); /* y <- ax+y */
-static void VScaleBy_Pthreads(sunrealtype a, N_Vector x); /* x <- ax   */
+static void VCopy_Pthreads(N_Vector x, N_Vector z);                              /* z=x       */
+static void VSum_Pthreads(N_Vector x, N_Vector y, N_Vector z);                   /* z=x+y     */
+static void VDiff_Pthreads(N_Vector x, N_Vector y, N_Vector z);                  /* z=x-y     */
+static void VNeg_Pthreads(N_Vector x, N_Vector z);                               /* z=-x      */
+static void VScaleSum_Pthreads(realtype c, N_Vector x, N_Vector y, N_Vector z);  /* z=c(x+y)  */
+static void VScaleDiff_Pthreads(realtype c, N_Vector x, N_Vector y, N_Vector z); /* z=c(x-y)  */
+static void VLin1_Pthreads(realtype a, N_Vector x, N_Vector y, N_Vector z);      /* z=ax+y    */
+static void VLin2_Pthreads(realtype a, N_Vector x, N_Vector y, N_Vector z);      /* z=ax-y    */
+static void Vaxpy_Pthreads(realtype a, N_Vector x, N_Vector y);                  /* y <- ax+y */
+static void VScaleBy_Pthreads(realtype a, N_Vector x);                           /* x <- ax   */
 
 /* Private functions for special cases of vector array operations */
-/* Z=X+Y */
-static void VSumVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* Y,
-                                     N_Vector* Z);
-/* Z=X-Y */
-static void VDiffVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* Y,
-                                      N_Vector* Z);
-/* Z=c(X+Y) */
-static void VScaleSumVectorArray_Pthreads(int nvec, sunrealtype c, N_Vector* X,
-                                          N_Vector* Y, N_Vector* Z);
-/* Z=c(X-Y) */
-static void VScaleDiffVectorArray_Pthreads(int nvec, sunrealtype c, N_Vector* X,
-                                           N_Vector* Y, N_Vector* Z);
-/* Z=aX+Y */
-static void VLin1VectorArray_Pthreads(int nvec, sunrealtype a, N_Vector* X,
-                                      N_Vector* Y, N_Vector* Z);
-/* Z=aX-Y */
-static void VLin2VectorArray_Pthreads(int nvec, sunrealtype a, N_Vector* X,
-                                      N_Vector* Y, N_Vector* Z);
-/* Y <- aX+Y */
-static void VaxpyVectorArray_Pthreads(int nvec, sunrealtype a, N_Vector* X,
-                                      N_Vector* Y);
+static int VSumVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* Y, N_Vector* Z);                   /* Z=X+Y     */
+static int VDiffVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* Y, N_Vector* Z);                  /* Z=X-Y     */
+static int VScaleSumVectorArray_Pthreads(int nvec, realtype c, N_Vector* X, N_Vector* Y, N_Vector* Z);  /* Z=c(X+Y)  */
+static int VScaleDiffVectorArray_Pthreads(int nvec, realtype c, N_Vector* X, N_Vector* Y, N_Vector* Z); /* Z=c(X-Y)  */
+static int VLin1VectorArray_Pthreads(int nvec, realtype a, N_Vector* X, N_Vector* Y, N_Vector* Z);      /* Z=aX+Y    */
+static int VLin2VectorArray_Pthreads(int nvec, realtype a, N_Vector* X, N_Vector* Y, N_Vector* Z);      /* Z=aX-Y    */
+static int VaxpyVectorArray_Pthreads(int nvec, realtype a, N_Vector* X, N_Vector* Y);                    /* Y <- aX+Y */
 
 /* Pthread companion functions for vector operations */
-static void* nvConstPt(void* thread_data);
-static void* nvLinearSumPt(void* thread_data);
-static void* nvProdPt(void* thread_data);
-static void* nvDivPt(void* thread_data);
-static void* nvScalePt(void* thread_data);
-static void* nvAbsPt(void* thread_data);
-static void* nvInvPt(void* thread_data);
-static void* nvAddConstPt(void* thread_data);
-static void* nvComparePt(void* thread_data);
-static void* nvDotProdPt(void* thread_data);
-static void* nvMaxNormPt(void* thread_data);
-static void* nvWSqrSumPt(void* thread_data);
-static void* nvMinPt(void* thread_data);
-static void* nvWL2NormPt(void* thread_data);
-static void* nvL1NormPt(void* thread_data);
-static void* nvInvTestPt(void* thread_data);
-static void* nvWSqrSumMaskPt(void* thread_data);
-static void* nvConstrMaskPt(void* thread_data);
-static void* nvMinQuotientPt(void* thread_data);
+static void *N_VLinearSum_PT(void *thread_data);
+static void *N_VConst_PT(void *thread_data);
+static void *N_VProd_PT(void *thread_data);
+static void *N_VDiv_PT(void *thread_data);
+static void *N_VScale_PT(void *thread_data);
+static void *N_VAbs_PT(void *thread_data);
+static void *N_VInv_PT(void *thread_data);
+static void *N_VAddConst_PT(void *thread_data);
+static void *N_VCompare_PT(void *thread_data);
+static void *N_VDotProd_PT(void *thread_data);
+static void *N_VMaxNorm_PT(void *thread_data);
+static void *N_VWSqrSum_PT(void *thread_data);
+static void *N_VMin_PT(void *thread_data);
+static void *N_VWL2Norm_PT(void *thread_data);
+static void *N_VL1Norm_PT(void *thread_data);
+static void *N_VInvTest_PT(void *thread_data);
+static void *N_VWSqrSumMask_PT(void *thread_data);
+static void *N_VConstrMask_PT(void *thread_data);
+static void *N_VMinQuotient_PT(void *thread_data);
 
 /* Pthread companion functions special cases of vector operations */
-static void* VCopy_PT(void* thread_data);
-static void* VSum_PT(void* thread_data);
-static void* VDiff_PT(void* thread_data);
-static void* VNeg_PT(void* thread_data);
-static void* VScaleSum_PT(void* thread_data);
-static void* VScaleDiff_PT(void* thread_data);
-static void* VLin1_PT(void* thread_data);
-static void* VLin2_PT(void* thread_data);
-static void* VScaleBy_PT(void* thread_data);
-static void* Vaxpy_PT(void* thread_data);
+static void *VCopy_PT(void *thread_data);
+static void *VSum_PT(void *thread_data);
+static void *VDiff_PT(void *thread_data);
+static void *VNeg_PT(void *thread_data);
+static void *VScaleSum_PT(void *thread_data);
+static void *VScaleDiff_PT(void *thread_data);
+static void *VLin1_PT(void *thread_data);
+static void *VLin2_PT(void *thread_data);
+static void *VScaleBy_PT(void *thread_data);
+static void *Vaxpy_PT(void *thread_data);
 
 /* Pthread companion functions for fused vector operations */
-static void* nvLinearCombinationPt(void* thread_data);
-static void* nvScaleAddMultiPt(void* thread_data);
-static void* nvDotProdMultiPt(void* thread_data);
+static void *N_VLinearCombination_PT(void *thread_data);
+static void *N_VScaleAddMulti_PT(void *thread_data);
+static void *N_VDotProdMulti_PT(void *thread_data);
 
 /* Pthread companion functions for vector array operations */
-static void* nvLinearSumVectorArrayPt(void* thread_data);
-static void* nvScaleVectorArrayPt(void* thread_data);
-static void* nvConstVectorArrayPt(void* thread_data);
-static void* nvWrmsNormVectorArrayPt(void* thread_data);
-static void* nvWrmsNormMaskVectorArrayPt(void* thread_data);
-static void* nvScaleAddMultiVectorArrayPt(void* thread_data);
-static void* nvLinearCombinationVectorArrayPt(void* thread_data);
+static void *N_VLinearSumVectorArray_PT(void *thread_data);
+static void *N_VScaleVectorArray_PT(void *thread_data);
+static void *N_VConstVectorArray_PT(void *thread_data);
+static void *N_VWrmsNormVectorArray_PT(void *thread_data);
+static void *N_VWrmsNormMaskVectorArray_PT(void *thread_data);
+static void *N_VScaleAddMultiVectorArray_PT(void *thread_data);
+static void *N_VLinearCombinationVectorArray_PT(void *thread_data);
 
 /* Pthread companion functions special cases of vector array operations */
-static void* VSumVectorArray_PT(void* thread_data);
-static void* VDiffVectorArray_PT(void* thread_data);
-static void* VScaleSumVectorArray_PT(void* thread_data);
-static void* VScaleDiffVectorArray_PT(void* thread_data);
-static void* VLin1VectorArray_PT(void* thread_data);
-static void* VLin2VectorArray_PT(void* thread_data);
-static void* VaxpyVectorArray_PT(void* thread_data);
+static void *VSumVectorArray_PT(void *thread_data);
+static void *VDiffVectorArray_PT(void *thread_data);
+static void *VScaleSumVectorArray_PT(void *thread_data);
+static void *VScaleDiffVectorArray_PT(void *thread_data);
+static void *VLin1VectorArray_PT(void *thread_data);
+static void *VLin2VectorArray_PT(void *thread_data);
+static void *VaxpyVectorArray_PT(void *thread_data);
 
 /* Pthread companion functions for XBraid interface operations */
-static void* VBufPack_PT(void* thread_data);
-static void* VBufUnpack_PT(void* thread_data);
+static void *VBufPack_PT(void *thread_data);
+static void *VBufUnpack_PT(void *thread_data);
 
 /* Function to determine loop values for threads */
-static void nvSplitLoop(int myid, int* nthreads, sunindextype* N,
-                        sunindextype* start, sunindextype* end);
+static void N_VSplitLoop(int myid, int *nthreads, sunindextype *N,
+                         sunindextype *start, sunindextype *end);
 
 /* Function to initialize thread data */
-static void nvInitThreadData(Pthreads_Data* thread_data);
+static void N_VInitThreadData(Pthreads_Data *thread_data);
 
 /*
  * -----------------------------------------------------------------
@@ -162,20 +140,15 @@ N_Vector_ID N_VGetVectorID_Pthreads(N_Vector v)
  * Function to create a new empty vector
  */
 
-N_Vector N_VNewEmpty_Pthreads(sunindextype length, int num_threads,
-                              SUNContext sunctx)
+N_Vector N_VNewEmpty_Pthreads(sunindextype length, int num_threads)
 {
-  SUNFunctionBegin(sunctx);
-
   N_Vector v;
   N_VectorContent_Pthreads content;
 
-  SUNAssertNull(length >= 0, SUN_ERR_ARG_OUTOFRANGE);
-
   /* Create an empty vector object */
   v = NULL;
-  v = N_VNewEmpty(sunctx);
-  SUNCheckLastErrNull();
+  v = N_VNewEmpty();
+  if (v == NULL) return(NULL);
 
   /* Attach operations */
 
@@ -188,7 +161,6 @@ N_Vector N_VNewEmpty_Pthreads(sunindextype length, int num_threads,
   v->ops->nvgetarraypointer = N_VGetArrayPointer_Pthreads;
   v->ops->nvsetarraypointer = N_VSetArrayPointer_Pthreads;
   v->ops->nvgetlength       = N_VGetLength_Pthreads;
-  v->ops->nvgetlocallength  = N_VGetLength_Pthreads;
 
   /* standard vector operations */
   v->ops->nvlinearsum    = N_VLinearSum_Pthreads;
@@ -224,22 +196,15 @@ N_Vector N_VNewEmpty_Pthreads(sunindextype length, int num_threads,
   v->ops->nvwsqrsumlocal     = N_VWSqrSumLocal_Pthreads;
   v->ops->nvwsqrsummasklocal = N_VWSqrSumMaskLocal_Pthreads;
 
-  /* single buffer reduction operations */
-  v->ops->nvdotprodmultilocal = N_VDotProdMulti_Pthreads;
-
   /* XBraid interface operations */
   v->ops->nvbufsize   = N_VBufSize_Pthreads;
   v->ops->nvbufpack   = N_VBufPack_Pthreads;
   v->ops->nvbufunpack = N_VBufUnpack_Pthreads;
 
-  /* debugging functions */
-  v->ops->nvprint     = N_VPrint_Pthreads;
-  v->ops->nvprintfile = N_VPrintFile_Pthreads;
-
   /* Create content */
   content = NULL;
-  content = (N_VectorContent_Pthreads)malloc(sizeof *content);
-  SUNAssertNull(content, SUN_ERR_MALLOC_FAIL);
+  content = (N_VectorContent_Pthreads) malloc(sizeof *content);
+  if (content == NULL) { N_VDestroy(v); return(NULL); }
 
   /* Attach content */
   v->content = content;
@@ -250,96 +215,161 @@ N_Vector N_VNewEmpty_Pthreads(sunindextype length, int num_threads,
   content->own_data    = SUNFALSE;
   content->data        = NULL;
 
-  return (v);
+  return(v);
 }
 
 /* ----------------------------------------------------------------------------
  * Function to create a new vector
  */
 
-N_Vector N_VNew_Pthreads(sunindextype length, int num_threads, SUNContext sunctx)
+N_Vector N_VNew_Pthreads(sunindextype length, int num_threads)
 {
-  SUNFunctionBegin(sunctx);
-
   N_Vector v;
-  sunrealtype* data;
-
-  SUNAssertNull(length >= 0, SUN_ERR_ARG_OUTOFRANGE);
+  realtype *data;
 
   v = NULL;
-  v = N_VNewEmpty_Pthreads(length, num_threads, sunctx);
-  SUNCheckLastErrNull();
+  v = N_VNewEmpty_Pthreads(length, num_threads);
+  if (v == NULL) return(NULL);
 
   /* Create data */
-  if (length > 0)
-  {
+  if (length > 0) {
+
     /* Allocate memory */
     data = NULL;
-    data = (sunrealtype*)malloc(length * sizeof(sunrealtype));
-    SUNAssertNull(data, SUN_ERR_MALLOC_FAIL);
+    data = (realtype *) malloc(length * sizeof(realtype));
+    if(data == NULL) { N_VDestroy_Pthreads(v); return(NULL); }
 
     /* Attach data */
     NV_OWN_DATA_PT(v) = SUNTRUE;
     NV_DATA_PT(v)     = data;
+
   }
 
-  return (v);
+  return(v);
 }
 
 /* ----------------------------------------------------------------------------
  * Function to create a vector with user data component
  */
 
-N_Vector N_VMake_Pthreads(sunindextype length, int num_threads,
-                          sunrealtype* v_data, SUNContext sunctx)
+N_Vector N_VMake_Pthreads(sunindextype length, int num_threads, realtype *v_data)
 {
-  SUNFunctionBegin(sunctx);
-
   N_Vector v;
 
-  SUNAssertNull(length >= 0, SUN_ERR_ARG_OUTOFRANGE);
-
   v = NULL;
-  v = N_VNewEmpty_Pthreads(length, num_threads, sunctx);
-  SUNCheckLastErrNull();
+  v = N_VNewEmpty_Pthreads(length, num_threads);
+  if (v == NULL) return(NULL);
 
-  if (length > 0)
-  {
+  if (length > 0) {
     /* Attach data */
     NV_OWN_DATA_PT(v) = SUNFALSE;
     NV_DATA_PT(v)     = v_data;
   }
 
-  return (v);
+  return(v);
+}
+
+/* ----------------------------------------------------------------------------
+ * Function to create an array of new vectors.
+ */
+
+N_Vector* N_VCloneVectorArray_Pthreads(int count, N_Vector w)
+{
+  N_Vector* vs;
+  int j;
+
+  if (count <= 0) return(NULL);
+
+  vs = NULL;
+  vs = (N_Vector*) malloc(count * sizeof(N_Vector));
+  if(vs == NULL) return(NULL);
+
+  for (j = 0; j < count; j++) {
+    vs[j] = NULL;
+    vs[j] = N_VClone_Pthreads(w);
+    if (vs[j] == NULL) {
+      N_VDestroyVectorArray_Pthreads(vs, j-1);
+      return(NULL);
+    }
+  }
+
+  return(vs);
+}
+
+/* ----------------------------------------------------------------------------
+ * Function to create an array of new vectors with NULL data array.
+ */
+
+N_Vector* N_VCloneVectorArrayEmpty_Pthreads(int count, N_Vector w)
+{
+  N_Vector* vs;
+  int j;
+
+  if (count <= 0) return(NULL);
+
+  vs = NULL;
+  vs = (N_Vector*) malloc(count * sizeof(N_Vector));
+  if(vs == NULL) return(NULL);
+
+  for (j = 0; j < count; j++) {
+    vs[j] = NULL;
+    vs[j] = N_VCloneEmpty_Pthreads(w);
+    if (vs[j] == NULL) {
+      N_VDestroyVectorArray_Pthreads(vs, j-1);
+      return(NULL);
+    }
+  }
+
+  return(vs);
+}
+
+/* ----------------------------------------------------------------------------
+ * Function to free an array created with N_VCloneVectorArray_Pthreads
+ */
+
+void N_VDestroyVectorArray_Pthreads(N_Vector* vs, int count)
+{
+  int j;
+
+  for (j = 0; j < count; j++) N_VDestroy_Pthreads(vs[j]);
+
+  free(vs); vs = NULL;
+
+  return;
 }
 
 /* ----------------------------------------------------------------------------
  * Function to return number of vector elements
  */
-sunindextype N_VGetLength_Pthreads(N_Vector v) { return NV_LENGTH_PT(v); }
+sunindextype N_VGetLength_Pthreads(N_Vector v)
+{
+  return NV_LENGTH_PT(v);
+}
 
 /* ----------------------------------------------------------------------------
  * Function to print a vector to stdout
  */
 
-void N_VPrint_Pthreads(N_Vector x) { N_VPrintFile_Pthreads(x, stdout); }
+void N_VPrint_Pthreads(N_Vector x)
+{
+  N_VPrintFile_Pthreads(x, stdout);
+}
 
 /* ----------------------------------------------------------------------------
  * Function to print a vector to outfile
  */
 
-void N_VPrintFile_Pthreads(N_Vector x, FILE* outfile)
+void N_VPrintFile_Pthreads(N_Vector x, FILE *outfile)
 {
   sunindextype i, N;
-  sunrealtype* xd;
+  realtype *xd;
 
   xd = NULL;
 
   N  = NV_LENGTH_PT(x);
   xd = NV_DATA_PT(x);
 
-  for (i = 0; i < N; i++)
-  {
+  for (i = 0; i < N; i++) {
 #if defined(SUNDIALS_EXTENDED_PRECISION)
     fprintf(outfile, "%11.8Lg\n", xd[i]);
 #elif defined(SUNDIALS_DOUBLE_PRECISION)
@@ -365,23 +395,23 @@ void N_VPrintFile_Pthreads(N_Vector x, FILE* outfile)
 
 N_Vector N_VCloneEmpty_Pthreads(N_Vector w)
 {
-  SUNFunctionBegin(w->sunctx);
-
   N_Vector v;
   N_VectorContent_Pthreads content;
 
+  if (w == NULL) return(NULL);
+
   /* Create vector */
   v = NULL;
-  v = N_VNewEmpty(w->sunctx);
-  SUNCheckLastErrNull();
+  v = N_VNewEmpty();
+  if (v == NULL) return(NULL);
 
   /* Attach operations */
-  SUNCheckCallNull(N_VCopyOps(w, v));
+  if (N_VCopyOps(w, v)) { N_VDestroy(v); return(NULL); }
 
   /* Create content */
   content = NULL;
-  content = (N_VectorContent_Pthreads)malloc(sizeof *content);
-  SUNAssertNull(content, SUN_ERR_MALLOC_FAIL);
+  content = (N_VectorContent_Pthreads) malloc(sizeof *content);
+  if (content == NULL) { N_VDestroy(v); return(NULL); }
 
   /* Attach content */
   v->content = content;
@@ -392,8 +422,9 @@ N_Vector N_VCloneEmpty_Pthreads(N_Vector w)
   content->own_data    = SUNFALSE;
   content->data        = NULL;
 
-  return (v);
+  return(v);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Create new vector from existing vector and attach data
@@ -401,32 +432,31 @@ N_Vector N_VCloneEmpty_Pthreads(N_Vector w)
 
 N_Vector N_VClone_Pthreads(N_Vector w)
 {
-  SUNFunctionBegin(w->sunctx);
-
   N_Vector v;
-  sunrealtype* data;
+  realtype *data;
   sunindextype length;
 
   v = NULL;
   v = N_VCloneEmpty_Pthreads(w);
-  SUNCheckLastErrNull();
+  if (v == NULL) return(NULL);
 
   length = NV_LENGTH_PT(w);
 
   /* Create data */
-  if (length > 0)
-  {
+  if (length > 0) {
+
     /* Allocate memory */
     data = NULL;
-    data = (sunrealtype*)malloc(length * sizeof(sunrealtype));
-    SUNAssertNull(data, SUN_ERR_MALLOC_FAIL);
+    data = (realtype *) malloc(length * sizeof(realtype));
+    if(data == NULL) { N_VDestroy_Pthreads(v); return(NULL); }
 
     /* Attach data */
     NV_OWN_DATA_PT(v) = SUNTRUE;
     NV_DATA_PT(v)     = data;
+
   }
 
-  return (v);
+  return(v);
 }
 
 /* ----------------------------------------------------------------------------
@@ -435,13 +465,11 @@ N_Vector N_VClone_Pthreads(N_Vector w)
 
 void N_VDestroy_Pthreads(N_Vector v)
 {
-  if (v == NULL) { return; }
+  if (v == NULL) return;
 
   /* free content */
-  if (v->content != NULL)
-  {
-    if (NV_OWN_DATA_PT(v) && NV_DATA_PT(v) != NULL)
-    {
+  if (v->content != NULL) {
+    if (NV_OWN_DATA_PT(v) && NV_DATA_PT(v) != NULL) {
       free(NV_DATA_PT(v));
       NV_DATA_PT(v) = NULL;
     }
@@ -450,13 +478,8 @@ void N_VDestroy_Pthreads(N_Vector v)
   }
 
   /* free ops and vector */
-  if (v->ops != NULL)
-  {
-    free(v->ops);
-    v->ops = NULL;
-  }
-  free(v);
-  v = NULL;
+  if (v->ops != NULL) { free(v->ops); v->ops = NULL; }
+  free(v); v = NULL;
 
   return;
 }
@@ -465,82 +488,73 @@ void N_VDestroy_Pthreads(N_Vector v)
  * Get storage requirement for vector
  */
 
-void N_VSpace_Pthreads(N_Vector v, sunindextype* lrw, sunindextype* liw)
+void N_VSpace_Pthreads(N_Vector v, sunindextype *lrw, sunindextype *liw)
 {
-  SUNFunctionBegin(v->sunctx);
-
-  SUNAssertVoid(lrw, SUN_ERR_ARG_CORRUPT);
-  SUNAssertVoid(liw, SUN_ERR_ARG_CORRUPT);
-
   *lrw = NV_LENGTH_PT(v);
   *liw = 1;
 
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Get vector data pointer
  */
 
-sunrealtype* N_VGetArrayPointer_Pthreads(N_Vector v)
+realtype *N_VGetArrayPointer_Pthreads(N_Vector v)
 {
-  return ((sunrealtype*)NV_DATA_PT(v));
+  return((realtype *) NV_DATA_PT(v));
 }
+
 
 /* ----------------------------------------------------------------------------
  * Set vector data pointer
  */
 
-void N_VSetArrayPointer_Pthreads(sunrealtype* v_data, N_Vector v)
+void N_VSetArrayPointer_Pthreads(realtype *v_data, N_Vector v)
 {
-  if (NV_LENGTH_PT(v) > 0) { NV_DATA_PT(v) = v_data; }
+  if (NV_LENGTH_PT(v) > 0) NV_DATA_PT(v) = v_data;
 
   return;
 }
+
 
 /* ----------------------------------------------------------------------------
  * Compute linear sum z[i] = a*x[i]+b*y[i]
  */
 
-void N_VLinearSum_Pthreads(sunrealtype a, N_Vector x, sunrealtype b, N_Vector y,
-                           N_Vector z)
+void N_VLinearSum_Pthreads(realtype a, N_Vector x, realtype b, N_Vector y, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
-  sunrealtype c;
+  realtype c;
   N_Vector v1, v2;
-  sunbooleantype test;
+  booleantype test;
 
-  if ((b == ONE) && (z == y))
-  { /* BLAS usage: axpy y <- ax+y */
-    Vaxpy_Pthreads(a, x, y);
+  if ((b == ONE) && (z == y)) {    /* BLAS usage: axpy y <- ax+y */
+    Vaxpy_Pthreads(a,x,y);
     return;
   }
 
-  if ((a == ONE) && (z == x))
-  { /* BLAS usage: axpy x <- by+x */
-    Vaxpy_Pthreads(b, y, x);
+  if ((a == ONE) && (z == x)) {    /* BLAS usage: axpy x <- by+x */
+    Vaxpy_Pthreads(b,y,x);
     return;
   }
 
   /* Case: a == b == 1.0 */
 
-  if ((a == ONE) && (b == ONE))
-  {
+  if ((a == ONE) && (b == ONE)) {
     VSum_Pthreads(x, y, z);
     return;
   }
 
   /* Cases: (1) a == 1.0, b = -1.0, (2) a == -1.0, b == 1.0 */
 
-  if ((test = ((a == ONE) && (b == -ONE))) || ((a == -ONE) && (b == ONE)))
-  {
+  if ((test = ((a == ONE) && (b == -ONE))) || ((a == -ONE) && (b == ONE))) {
     v1 = test ? y : x;
     v2 = test ? x : y;
     VDiff_Pthreads(v2, v1, z);
@@ -550,8 +564,7 @@ void N_VLinearSum_Pthreads(sunrealtype a, N_Vector x, sunrealtype b, N_Vector y,
   /* Cases: (1) a == 1.0, b == other or 0.0, (2) a == other or 0.0, b == 1.0 */
   /* if a or b is 0.0, then user should have called N_VScale */
 
-  if ((test = (a == ONE)) || (b == ONE))
-  {
+  if ((test = (a == ONE)) || (b == ONE)) {
     c  = test ? b : a;
     v1 = test ? y : x;
     v2 = test ? x : y;
@@ -561,9 +574,8 @@ void N_VLinearSum_Pthreads(sunrealtype a, N_Vector x, sunrealtype b, N_Vector y,
 
   /* Cases: (1) a == -1.0, b != 1.0, (2) a != 1.0, b == -1.0 */
 
-  if ((test = (a == -ONE)) || (b == -ONE))
-  {
-    c  = test ? b : a;
+  if ((test = (a == -ONE)) || (b == -ONE)) {
+    c = test ? b : a;
     v1 = test ? y : x;
     v2 = test ? x : y;
     VLin2_Pthreads(c, v1, v2, z);
@@ -573,16 +585,14 @@ void N_VLinearSum_Pthreads(sunrealtype a, N_Vector x, sunrealtype b, N_Vector y,
   /* Case: a == b */
   /* catches case both a and b are 0.0 - user should have called N_VConst */
 
-  if (a == b)
-  {
+  if (a == b) {
     VScaleSum_Pthreads(a, x, y, z);
     return;
   }
 
   /* Case: a == -b */
 
-  if (a == -b)
-  {
+  if (a == -b) {
     VScaleDiff_Pthreads(a, x, y, z);
     return;
   }
@@ -593,24 +603,21 @@ void N_VLinearSum_Pthreads(sunrealtype a, N_Vector x, sunrealtype b, N_Vector y,
      (3) a,b == other, a !=b, a != -b */
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = (pthread_t*)malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = (pthread_t *) malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].c1 = a;
@@ -620,11 +627,13 @@ void N_VLinearSum_Pthreads(sunrealtype a, N_Vector x, sunrealtype b, N_Vector y,
     thread_data[i].v3 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvLinearSumPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VLinearSum_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -638,15 +647,15 @@ void N_VLinearSum_Pthreads(sunrealtype a, N_Vector x, sunrealtype b, N_Vector y,
  * Pthread companion function to N_VLinearSum
  */
 
-static void* nvLinearSumPt(void* thread_data)
+static void *N_VLinearSum_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype a, b;
-  sunrealtype *xd, *yd, *zd;
-  Pthreads_Data* my_data;
+  realtype a, b;
+  realtype *xd, *yd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   a  = my_data->c1;
   b  = my_data->c2;
@@ -658,56 +667,56 @@ static void* nvLinearSumPt(void* thread_data)
   end   = my_data->end;
 
   /* compute linear sum */
-  for (i = start; i < end; i++) { zd[i] = (a * xd[i]) + (b * yd[i]); }
+  for (i = start; i < end; i++){
+    zd[i] = (a*xd[i])+(b*yd[i]);
+  }
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Assigns constant value to all vector elements, z[i] = c
  */
 
-void N_VConst_Pthreads(sunrealtype c, N_Vector z)
+void N_VConst_Pthreads(realtype c, N_Vector z)
 {
-  SUNFunctionBegin(z->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(z);
-  nthreads = NV_NUM_THREADS_PT(z);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(z);
+  nthreads     = NV_NUM_THREADS_PT(z);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].c1 = c;
     thread_data[i].v1 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvConstPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VConst_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -717,19 +726,20 @@ void N_VConst_Pthreads(sunrealtype c, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VConst
  */
 
-static void* nvConstPt(void* thread_data)
+static void *N_VConst_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype c;
-  sunrealtype* zd;
-  Pthreads_Data* my_data;
+  realtype c;
+  realtype *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   c  = my_data->c1;
   zd = my_data->v1;
@@ -738,11 +748,13 @@ static void* nvConstPt(void* thread_data)
   end   = my_data->end;
 
   /* assign constant values */
-  for (i = start; i < end; i++) { zd[i] = c; }
+  for (i = start; i < end; i++)
+    zd[i] = c;
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Compute componentwise product z[i] = x[i]*y[i]
@@ -750,33 +762,28 @@ static void* nvConstPt(void* thread_data)
 
 void N_VProd_Pthreads(N_Vector x, N_Vector y, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
@@ -784,11 +791,13 @@ void N_VProd_Pthreads(N_Vector x, N_Vector y, N_Vector z)
     thread_data[i].v3 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvProdPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VProd_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and exit */
   pthread_attr_destroy(&attr);
@@ -802,14 +811,14 @@ void N_VProd_Pthreads(N_Vector x, N_Vector y, N_Vector z)
  * Pthread companion function to N_VProd
  */
 
-static void* nvProdPt(void* thread_data)
+static void *N_VProd_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *yd, *zd;
-  Pthreads_Data* my_data;
+  realtype *xd, *yd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   yd = my_data->v2;
@@ -819,11 +828,13 @@ static void* nvProdPt(void* thread_data)
   end   = my_data->end;
 
   /* compute componentwise product */
-  for (i = start; i < end; i++) { zd[i] = xd[i] * yd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = xd[i]*yd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Compute componentwise division z[i] = x[i]/y[i]
@@ -831,33 +842,28 @@ static void* nvProdPt(void* thread_data)
 
 void N_VDiv_Pthreads(N_Vector x, N_Vector y, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
@@ -865,11 +871,13 @@ void N_VDiv_Pthreads(N_Vector x, N_Vector y, N_Vector z)
     thread_data[i].v3 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvDivPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VDiv_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -879,18 +887,19 @@ void N_VDiv_Pthreads(N_Vector x, N_Vector y, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VDiv
  */
 
-static void* nvDivPt(void* thread_data)
+static void *N_VDiv_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *yd, *zd;
-  Pthreads_Data* my_data;
+  realtype *xd, *yd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   yd = my_data->v2;
@@ -900,63 +909,52 @@ static void* nvDivPt(void* thread_data)
   end   = my_data->end;
 
   /* compute componentwise division */
-  for (i = start; i < end; i++) { zd[i] = xd[i] / yd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = xd[i]/yd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute scaler multiplication z[i] = c*x[i]
  */
 
-void N_VScale_Pthreads(sunrealtype c, N_Vector x, N_Vector z)
+void N_VScale_Pthreads(realtype c, N_Vector x, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
-  if (z == x)
-  { /* BLAS usage: scale x <- cx */
+  if (z == x) {  /* BLAS usage: scale x <- cx */
     VScaleBy_Pthreads(c, x);
     return;
   }
 
-  if (c == ONE)
-  {
+  if (c == ONE) {
     VCopy_Pthreads(x, z);
-    return;
-  }
-  else if (c == -ONE)
-  {
+  } else if (c == -ONE) {
     VNeg_Pthreads(x, z);
-    return;
-  }
-  else
-  {
+  } else {
     /* allocate threads and thread data structs */
-    N        = NV_LENGTH_PT(x);
-    nthreads = NV_NUM_THREADS_PT(x);
-    threads  = malloc(nthreads * sizeof(pthread_t));
-    SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-    thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-    SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+    N            = NV_LENGTH_PT(x);
+    nthreads     = NV_NUM_THREADS_PT(x);
+    threads      = malloc(nthreads*sizeof(pthread_t));
+    thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
     /* set thread attributes */
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-    for (i = 0; i < nthreads; i++)
-    {
+    for (i=0; i<nthreads; i++) {
       /* initialize thread data */
-      nvInitThreadData(&thread_data[i]);
+      N_VInitThreadData(&thread_data[i]);
 
       /* compute start and end loop index for thread */
-      nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+      N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
       /* pack thread data */
       thread_data[i].c1 = c;
@@ -964,11 +962,13 @@ void N_VScale_Pthreads(sunrealtype c, N_Vector x, N_Vector z)
       thread_data[i].v2 = NV_DATA_PT(z);
 
       /* create threads and call pthread companion function */
-      pthread_create(&threads[i], &attr, nvScalePt, (void*)&thread_data[i]);
+      pthread_create(&threads[i], &attr, N_VScale_PT, (void *) &thread_data[i]);
     }
 
     /* wait for all threads to finish */
-    for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+    for (i=0; i<nthreads; i++) {
+      pthread_join(threads[i], NULL);
+    }
 
     /* clean up */
     pthread_attr_destroy(&attr);
@@ -979,19 +979,20 @@ void N_VScale_Pthreads(sunrealtype c, N_Vector x, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VScale
  */
 
-static void* nvScalePt(void* thread_data)
+static void *N_VScale_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype c;
-  sunrealtype *xd, *zd;
-  Pthreads_Data* my_data;
+  realtype c;
+  realtype *xd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   c  = my_data->c1;
   xd = my_data->v1;
@@ -1001,11 +1002,13 @@ static void* nvScalePt(void* thread_data)
   end   = my_data->end;
 
   /* compute scaler multiplication */
-  for (i = start; i < end; i++) { zd[i] = c * xd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = c*xd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Compute absolute value of vector components z[i] = SUNRabs(x[i])
@@ -1013,44 +1016,41 @@ static void* nvScalePt(void* thread_data)
 
 void N_VAbs_Pthreads(N_Vector x, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
     thread_data[i].v2 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvAbsPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VAbs_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1060,18 +1060,19 @@ void N_VAbs_Pthreads(N_Vector x, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VAbs
  */
 
-static void* nvAbsPt(void* thread_data)
+static void *N_VAbs_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *zd;
-  Pthreads_Data* my_data;
+  realtype *xd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   zd = my_data->v2;
@@ -1080,11 +1081,13 @@ static void* nvAbsPt(void* thread_data)
   end   = my_data->end;
 
   /* compute absolute value of components */
-  for (i = start; i < end; i++) { zd[i] = SUNRabs(xd[i]); }
+  for (i = start; i < end; i++)
+    zd[i] = SUNRabs(xd[i]);
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Compute componentwise inverse z[i] = 1 / x[i]
@@ -1092,44 +1095,41 @@ static void* nvAbsPt(void* thread_data)
 
 void N_VInv_Pthreads(N_Vector x, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
     thread_data[i].v2 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvInvPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VInv_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1139,18 +1139,19 @@ void N_VInv_Pthreads(N_Vector x, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VInv
  */
 
-static void* nvInvPt(void* thread_data)
+static void *N_VInv_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *zd;
-  Pthreads_Data* my_data;
+  realtype *xd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   zd = my_data->v2;
@@ -1159,45 +1160,42 @@ static void* nvInvPt(void* thread_data)
   end   = my_data->end;
 
   /* compute componentwise inverse */
-  for (i = start; i < end; i++) { zd[i] = ONE / xd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = ONE/xd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute componentwise addition of a scaler to a vector z[i] = x[i] + b
  */
 
-void N_VAddConst_Pthreads(N_Vector x, sunrealtype b, N_Vector z)
+void N_VAddConst_Pthreads(N_Vector x, realtype b, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].c1 = b;
@@ -1205,11 +1203,13 @@ void N_VAddConst_Pthreads(N_Vector x, sunrealtype b, N_Vector z)
     thread_data[i].v2 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvAddConstPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VAddConst_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1219,19 +1219,20 @@ void N_VAddConst_Pthreads(N_Vector x, sunrealtype b, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VAddConst
  */
 
-static void* nvAddConstPt(void* thread_data)
+static void *N_VAddConst_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype b;
-  sunrealtype *xd, *zd;
-  Pthreads_Data* my_data;
+  realtype b;
+  realtype *xd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   b  = my_data->c1;
   xd = my_data->v1;
@@ -1241,35 +1242,33 @@ static void* nvAddConstPt(void* thread_data)
   end   = my_data->end;
 
   /* compute componentwise constant addition */
-  for (i = start; i < end; i++) { zd[i] = xd[i] + b; }
+  for (i = start; i < end; i++)
+    zd[i] = xd[i] + b;
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Computes the dot product of two vectors, a = sum(x[i]*y[i])
  */
 
-sunrealtype N_VDotProd_Pthreads(N_Vector x, N_Vector y)
+realtype N_VDotProd_Pthreads(N_Vector x, N_Vector y)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
-  sunrealtype sum = ZERO;
+  realtype        sum = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -1278,26 +1277,27 @@ sunrealtype N_VDotProd_Pthreads(N_Vector x, N_Vector y)
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1           = NV_DATA_PT(x);
-    thread_data[i].v2           = NV_DATA_PT(y);
+    thread_data[i].v1 = NV_DATA_PT(x);
+    thread_data[i].v2 = NV_DATA_PT(y);
     thread_data[i].global_val   = &sum;
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvDotProdPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VDotProd_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1305,23 +1305,24 @@ sunrealtype N_VDotProd_Pthreads(N_Vector x, N_Vector y)
   free(threads);
   free(thread_data);
 
-  return (sum);
+  return(sum);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VDotProd
  */
 
-static void* nvDotProdPt(void* thread_data)
+static void *N_VDotProd_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *yd;
-  sunrealtype local_sum, *global_sum;
-  Pthreads_Data* my_data;
-  pthread_mutex_t* global_mutex;
+  realtype *xd, *yd;
+  realtype local_sum, *global_sum;
+  Pthreads_Data *my_data;
+  pthread_mutex_t *global_mutex;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   yd = my_data->v2;
@@ -1334,7 +1335,8 @@ static void* nvDotProdPt(void* thread_data)
 
   /* compute dot product */
   local_sum = ZERO;
-  for (i = start; i < end; i++) { local_sum += xd[i] * yd[i]; }
+  for (i = start; i < end; i++)
+    local_sum += xd[i] * yd[i];
 
   /* update global sum */
   pthread_mutex_lock(global_mutex);
@@ -1345,29 +1347,26 @@ static void* nvDotProdPt(void* thread_data)
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Computes max norm of the vector
  */
 
-sunrealtype N_VMaxNorm_Pthreads(N_Vector x)
+realtype N_VMaxNorm_Pthreads(N_Vector x)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
-  sunrealtype max = ZERO;
+  realtype        max = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -1376,25 +1375,26 @@ sunrealtype N_VMaxNorm_Pthreads(N_Vector x)
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1           = NV_DATA_PT(x);
+    thread_data[i].v1 = NV_DATA_PT(x);
     thread_data[i].global_val   = &max;
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvMaxNormPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VMaxNorm_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1402,23 +1402,24 @@ sunrealtype N_VMaxNorm_Pthreads(N_Vector x)
   free(threads);
   free(thread_data);
 
-  return (max);
+  return(max);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VMaxNorm
  */
 
-static void* nvMaxNormPt(void* thread_data)
+static void *N_VMaxNorm_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype* xd;
-  sunrealtype local_max, *global_max;
-  Pthreads_Data* my_data;
-  pthread_mutex_t* global_mutex;
+  realtype *xd;
+  realtype local_max, *global_max;
+  Pthreads_Data *my_data;
+  pthread_mutex_t *global_mutex;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
 
@@ -1431,54 +1432,49 @@ static void* nvMaxNormPt(void* thread_data)
   /* find local max */
   local_max = ZERO;
   for (i = start; i < end; i++)
-  {
-    if (SUNRabs(xd[i]) > local_max) { local_max = SUNRabs(xd[i]); }
-  }
+    if (SUNRabs(xd[i]) > local_max) local_max = SUNRabs(xd[i]);
 
   /* update global max */
   pthread_mutex_lock(global_mutex);
-  if (local_max > *global_max) { *global_max = local_max; }
+  if (local_max > *global_max) {
+    *global_max = local_max;
+  }
   pthread_mutex_unlock(global_mutex);
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Computes weighted root mean square norm of a vector
  */
 
-sunrealtype N_VWrmsNorm_Pthreads(N_Vector x, N_Vector w)
+realtype N_VWrmsNorm_Pthreads(N_Vector x, N_Vector w)
 {
-  SUNFunctionBegin(x->sunctx);
-  sunrealtype sqrsum = N_VWSqrSumLocal_Pthreads(x, w);
-  SUNCheckLastErrNoRet();
-  return (SUNRsqrt(sqrsum / (NV_LENGTH_PT(x))));
+  return(SUNRsqrt(N_VWSqrSumLocal_Pthreads(x, w)/(NV_LENGTH_PT(x))));
 }
+
 
 /* ----------------------------------------------------------------------------
  * Computes weighted square sum of a vector
  */
 
-sunrealtype N_VWSqrSumLocal_Pthreads(N_Vector x, N_Vector w)
+realtype N_VWSqrSumLocal_Pthreads(N_Vector x, N_Vector w)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
-  sunrealtype sum = ZERO;
+  realtype        sum = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -1487,26 +1483,27 @@ sunrealtype N_VWSqrSumLocal_Pthreads(N_Vector x, N_Vector w)
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1           = NV_DATA_PT(x);
-    thread_data[i].v2           = NV_DATA_PT(w);
+    thread_data[i].v1 = NV_DATA_PT(x);
+    thread_data[i].v2 = NV_DATA_PT(w);
     thread_data[i].global_val   = &sum;
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvWSqrSumPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VWSqrSum_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1514,23 +1511,24 @@ sunrealtype N_VWSqrSumLocal_Pthreads(N_Vector x, N_Vector w)
   free(threads);
   free(thread_data);
 
-  return (sum);
+  return(sum);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VWrmsNorm
  */
 
-static void* nvWSqrSumPt(void* thread_data)
+static void *N_VWSqrSum_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *wd;
-  sunrealtype local_sum, *global_sum;
-  Pthreads_Data* my_data;
-  pthread_mutex_t* global_mutex;
+  realtype *xd, *wd;
+  realtype local_sum, *global_sum;
+  Pthreads_Data *my_data;
+  pthread_mutex_t *global_mutex;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   wd = my_data->v2;
@@ -1543,7 +1541,8 @@ static void* nvWSqrSumPt(void* thread_data)
 
   /* compute wrms norm */
   local_sum = ZERO;
-  for (i = start; i < end; i++) { local_sum += SUNSQR(xd[i] * wd[i]); }
+  for (i = start; i < end; i++)
+    local_sum += SUNSQR(xd[i] * wd[i]);
 
   /* update global sum */
   pthread_mutex_lock(global_mutex);
@@ -1554,41 +1553,36 @@ static void* nvWSqrSumPt(void* thread_data)
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Computes weighted root mean square norm of a masked vector
  */
 
-sunrealtype N_VWrmsNormMask_Pthreads(N_Vector x, N_Vector w, N_Vector id)
+realtype N_VWrmsNormMask_Pthreads(N_Vector x, N_Vector w, N_Vector id)
 {
-  SUNFunctionBegin(x->sunctx);
-  sunrealtype sqrsummask = N_VWSqrSumMaskLocal_Pthreads(x, w, id);
-  SUNCheckLastErrNoRet();
-  return (SUNRsqrt(sqrsummask / (NV_LENGTH_PT(x))));
+  return(SUNRsqrt(N_VWSqrSumMaskLocal_Pthreads(x, w, id)/(NV_LENGTH_PT(x))));
 }
+
 
 /* ----------------------------------------------------------------------------
  * Computes weighted square sum of a masked vector
  */
 
-sunrealtype N_VWSqrSumMaskLocal_Pthreads(N_Vector x, N_Vector w, N_Vector id)
+realtype N_VWSqrSumMaskLocal_Pthreads(N_Vector x, N_Vector w, N_Vector id)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
-  sunrealtype sum = ZERO;
+  realtype        sum = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -1597,27 +1591,28 @@ sunrealtype N_VWSqrSumMaskLocal_Pthreads(N_Vector x, N_Vector w, N_Vector id)
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1           = NV_DATA_PT(x);
-    thread_data[i].v2           = NV_DATA_PT(w);
-    thread_data[i].v3           = NV_DATA_PT(id);
+    thread_data[i].v1 = NV_DATA_PT(x);
+    thread_data[i].v2 = NV_DATA_PT(w);
+    thread_data[i].v3 = NV_DATA_PT(id);
     thread_data[i].global_val   = &sum;
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvWSqrSumMaskPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VWSqrSumMask_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1625,23 +1620,24 @@ sunrealtype N_VWSqrSumMaskLocal_Pthreads(N_Vector x, N_Vector w, N_Vector id)
   free(threads);
   free(thread_data);
 
-  return (sum);
+  return(sum);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VWSqrSumMask
  */
 
-static void* nvWSqrSumMaskPt(void* thread_data)
+static void *N_VWSqrSumMask_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *wd, *idd;
-  sunrealtype local_sum, *global_sum;
-  Pthreads_Data* my_data;
-  pthread_mutex_t* global_mutex;
+  realtype *xd, *wd, *idd;
+  realtype local_sum, *global_sum;
+  Pthreads_Data *my_data;
+  pthread_mutex_t *global_mutex;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd  = my_data->v1;
   wd  = my_data->v2;
@@ -1655,9 +1651,9 @@ static void* nvWSqrSumMaskPt(void* thread_data)
 
   /* compute wrms norm with mask */
   local_sum = ZERO;
-  for (i = start; i < end; i++)
-  {
-    if (idd[i] > ZERO) { local_sum += SUNSQR(xd[i] * wd[i]); }
+  for (i = start; i < end; i++) {
+    if (idd[i] > ZERO)
+      local_sum += SUNSQR(xd[i]*wd[i]);
   }
 
   /* update global sum */
@@ -1669,32 +1665,29 @@ static void* nvWSqrSumMaskPt(void* thread_data)
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Finds the minimun component of a vector
  */
 
-sunrealtype N_VMin_Pthreads(N_Vector x)
+realtype N_VMin_Pthreads(N_Vector x)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
-  sunrealtype min;
+  realtype        min;
 
   /* initialize global min */
-  min = NV_Ith_PT(x, 0);
+  min = NV_Ith_PT(x,0);
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -1703,25 +1696,26 @@ sunrealtype N_VMin_Pthreads(N_Vector x)
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1           = NV_DATA_PT(x);
+    thread_data[i].v1 = NV_DATA_PT(x);
     thread_data[i].global_val   = &min;
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvMinPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VMin_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1729,23 +1723,24 @@ sunrealtype N_VMin_Pthreads(N_Vector x)
   free(threads);
   free(thread_data);
 
-  return (min);
+  return(min);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VMin
  */
 
-static void* nvMinPt(void* thread_data)
+static void *N_VMin_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype* xd;
-  sunrealtype local_min, *global_min;
-  Pthreads_Data* my_data;
-  pthread_mutex_t* global_mutex;
+  realtype *xd;
+  realtype local_min, *global_min;
+  Pthreads_Data *my_data;
+  pthread_mutex_t *global_mutex;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
 
@@ -1757,43 +1752,41 @@ static void* nvMinPt(void* thread_data)
 
   /* find local min */
   local_min = *global_min;
-  for (i = start; i < end; i++)
-  {
-    if (xd[i] < local_min) { local_min = xd[i]; }
+  for (i = start; i < end; i++) {
+    if (xd[i] < local_min)
+      local_min = xd[i];
   }
 
   /* update global min */
   pthread_mutex_lock(global_mutex);
-  if (local_min < *global_min) { *global_min = local_min; }
+  if (local_min < *global_min)
+    *global_min = local_min;
   pthread_mutex_unlock(global_mutex);
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Computes weighted L2 norm of a vector
  */
 
-sunrealtype N_VWL2Norm_Pthreads(N_Vector x, N_Vector w)
+realtype N_VWL2Norm_Pthreads(N_Vector x, N_Vector w)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
-  sunrealtype sum = ZERO;
+  realtype        sum = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -1802,26 +1795,27 @@ sunrealtype N_VWL2Norm_Pthreads(N_Vector x, N_Vector w)
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1           = NV_DATA_PT(x);
-    thread_data[i].v2           = NV_DATA_PT(w);
+    thread_data[i].v1 = NV_DATA_PT(x);
+    thread_data[i].v2 = NV_DATA_PT(w);
     thread_data[i].global_val   = &sum;
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvWL2NormPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VWL2Norm_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1829,23 +1823,24 @@ sunrealtype N_VWL2Norm_Pthreads(N_Vector x, N_Vector w)
   free(threads);
   free(thread_data);
 
-  return (SUNRsqrt(sum));
+  return(SUNRsqrt(sum));
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VWL2Norm
  */
 
-static void* nvWL2NormPt(void* thread_data)
+static void *N_VWL2Norm_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *wd;
-  sunrealtype local_sum, *global_sum;
-  Pthreads_Data* my_data;
-  pthread_mutex_t* global_mutex;
+  realtype *xd, *wd;
+  realtype local_sum, *global_sum;
+  Pthreads_Data *my_data;
+  pthread_mutex_t *global_mutex;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   wd = my_data->v2;
@@ -1858,7 +1853,8 @@ static void* nvWL2NormPt(void* thread_data)
 
   /* compute WL2 norm */
   local_sum = ZERO;
-  for (i = start; i < end; i++) { local_sum += SUNSQR(xd[i] * wd[i]); }
+  for (i = start; i < end; i++)
+    local_sum += SUNSQR(xd[i]*wd[i]);
 
   /* update global sum */
   pthread_mutex_lock(global_mutex);
@@ -1869,29 +1865,26 @@ static void* nvWL2NormPt(void* thread_data)
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Computes L1 norm of a vector
  */
 
-sunrealtype N_VL1Norm_Pthreads(N_Vector x)
+realtype N_VL1Norm_Pthreads(N_Vector x)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
-  sunrealtype sum = ZERO;
+  realtype        sum = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -1900,25 +1893,26 @@ sunrealtype N_VL1Norm_Pthreads(N_Vector x)
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1           = NV_DATA_PT(x);
+    thread_data[i].v1 = NV_DATA_PT(x);
     thread_data[i].global_val   = &sum;
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvL1NormPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VL1Norm_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -1926,23 +1920,24 @@ sunrealtype N_VL1Norm_Pthreads(N_Vector x)
   free(threads);
   free(thread_data);
 
-  return (sum);
+  return(sum);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VL1Norm
  */
 
-static void* nvL1NormPt(void* thread_data)
+static void *N_VL1Norm_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype* xd;
-  sunrealtype local_sum, *global_sum;
-  Pthreads_Data* my_data;
-  pthread_mutex_t* global_mutex;
+  realtype *xd;
+  realtype local_sum, *global_sum;
+  Pthreads_Data *my_data;
+  pthread_mutex_t *global_mutex;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
 
@@ -1954,7 +1949,8 @@ static void* nvL1NormPt(void* thread_data)
 
   /* compute L1 norm */
   local_sum = ZERO;
-  for (i = start; i < end; i++) { local_sum += SUNRabs(xd[i]); }
+  for (i = start; i < end; i++)
+    local_sum += SUNRabs(xd[i]);
 
   /* update global sum */
   pthread_mutex_lock(global_mutex);
@@ -1965,51 +1961,49 @@ static void* nvL1NormPt(void* thread_data)
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compare vector component values to a scaler
  */
 
-void N_VCompare_Pthreads(sunrealtype c, N_Vector x, N_Vector z)
+void N_VCompare_Pthreads(realtype c, N_Vector x, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].c1 = c;
+    thread_data[i].c1  = c;
     thread_data[i].v1 = NV_DATA_PT(x);
     thread_data[i].v2 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvComparePt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VCompare_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -2023,15 +2017,15 @@ void N_VCompare_Pthreads(sunrealtype c, N_Vector x, N_Vector z)
  * Pthread companion function to N_VCompare
  */
 
-static void* nvComparePt(void* thread_data)
+static void *N_VCompare_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype c;
-  sunrealtype *xd, *zd;
-  Pthreads_Data* my_data;
+  realtype c;
+  realtype *xd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   c  = my_data->c1;
   xd = my_data->v1;
@@ -2041,82 +2035,84 @@ static void* nvComparePt(void* thread_data)
   end   = my_data->end;
 
   /* compare component to scaler */
-  for (i = start; i < end; i++) { zd[i] = (SUNRabs(xd[i]) >= c) ? ONE : ZERO; }
+  for (i = start; i < end; i++)
+    zd[i] = (SUNRabs(xd[i]) >= c) ? ONE : ZERO;
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute componentwise inverse z[i] = ONE/x[i] and check if x[i] == ZERO
  */
 
-sunbooleantype N_VInvTest_Pthreads(N_Vector x, N_Vector z)
+booleantype N_VInvTest_Pthreads(N_Vector x, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
-  sunrealtype val = ZERO;
+  realtype val = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1         = NV_DATA_PT(x);
-    thread_data[i].v2         = NV_DATA_PT(z);
+    thread_data[i].v1 = NV_DATA_PT(x);
+    thread_data[i].v2 = NV_DATA_PT(z);
     thread_data[i].global_val = &val;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvInvTestPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VInvTest_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  if (val > ZERO) { return (SUNFALSE); }
-  else { return (SUNTRUE); }
+  if (val > ZERO)
+    return (SUNFALSE);
+  else
+    return (SUNTRUE);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VInvTest
  */
 
-static void* nvInvTestPt(void* thread_data)
+static void *N_VInvTest_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *zd;
-  sunrealtype local_val, *global_val;
-  Pthreads_Data* my_data;
+  realtype *xd, *zd;
+  realtype local_val, *global_val;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   zd = my_data->v2;
@@ -2128,90 +2124,94 @@ static void* nvInvTestPt(void* thread_data)
 
   /* compute inverse with check for divide by ZERO */
   local_val = ZERO;
-  for (i = start; i < end; i++)
-  {
-    if (xd[i] == ZERO) { local_val = ONE; }
-    else { zd[i] = ONE / xd[i]; }
+  for (i = start; i < end; i++) {
+    if (xd[i] == ZERO)
+      local_val = ONE;
+    else
+      zd[i] = ONE/xd[i];
   }
 
   /* update global val */
-  if (local_val > ZERO) { *global_val = local_val; }
+  if (local_val > ZERO) {
+    *global_val = local_val;
+  }
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute constraint mask of a vector
  */
 
-sunbooleantype N_VConstrMask_Pthreads(N_Vector c, N_Vector x, N_Vector m)
+booleantype N_VConstrMask_Pthreads(N_Vector c, N_Vector x, N_Vector m)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
-  sunrealtype val = ZERO;
+  realtype val = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1         = NV_DATA_PT(c);
-    thread_data[i].v2         = NV_DATA_PT(x);
-    thread_data[i].v3         = NV_DATA_PT(m);
+    thread_data[i].v1 = NV_DATA_PT(c);
+    thread_data[i].v2 = NV_DATA_PT(x);
+    thread_data[i].v3 = NV_DATA_PT(m);
     thread_data[i].global_val = &val;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvConstrMaskPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VConstrMask_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  if (val > ZERO) { return (SUNFALSE); }
-  else { return (SUNTRUE); }
+  if (val > ZERO)
+    return(SUNFALSE);
+  else
+    return(SUNTRUE);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VConstrMask
  */
 
-static void* nvConstrMaskPt(void* thread_data)
+static void *N_VConstrMask_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *cd, *xd, *md;
-  sunrealtype local_val, *global_val;
-  Pthreads_Data* my_data;
+  realtype *cd, *xd, *md;
+  realtype local_val, *global_val;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   cd = my_data->v1;
   xd = my_data->v2;
@@ -2224,51 +2224,49 @@ static void* nvConstrMaskPt(void* thread_data)
 
   /* compute constraint mask */
   local_val = ZERO;
-  for (i = start; i < end; i++)
-  {
+  for (i = start; i < end; i++) {
     md[i] = ZERO;
 
     /* Continue if no constraints were set for the variable */
-    if (cd[i] == ZERO) { continue; }
+    if (cd[i] == ZERO)
+      continue;
 
     /* Check if a set constraint has been violated */
-    if ((SUNRabs(cd[i]) > ONEPT5 && xd[i] * cd[i] <= ZERO) ||
-        (SUNRabs(cd[i]) > HALF && xd[i] * cd[i] < ZERO))
-    {
+    if ((SUNRabs(cd[i]) > ONEPT5 && xd[i]*cd[i] <= ZERO) ||
+        (SUNRabs(cd[i]) > HALF   && xd[i]*cd[i] <  ZERO)) {
       local_val = md[i] = ONE;
     }
   }
 
   /* update global val */
-  if (local_val > ZERO) { *global_val = local_val; }
+  if (local_val > ZERO) {
+    *global_val = local_val;
+  }
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute minimum componentwise quotient
  */
 
-sunrealtype N_VMinQuotient_Pthreads(N_Vector num, N_Vector denom)
+realtype N_VMinQuotient_Pthreads(N_Vector num, N_Vector denom)
 {
-  SUNFunctionBegin(num->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
-  sunrealtype min = SUN_BIG_REAL;
+  realtype        min = BIG_REAL;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(num);
-  nthreads = NV_NUM_THREADS_PT(num);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(num);
+  nthreads    = NV_NUM_THREADS_PT(num);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -2277,26 +2275,27 @@ sunrealtype N_VMinQuotient_Pthreads(N_Vector num, N_Vector denom)
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
-    thread_data[i].v1           = NV_DATA_PT(num);
-    thread_data[i].v2           = NV_DATA_PT(denom);
+    thread_data[i].v1 = NV_DATA_PT(num);
+    thread_data[i].v2 = NV_DATA_PT(denom);
     thread_data[i].global_val   = &min;
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvMinQuotientPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VMinQuotient_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -2304,23 +2303,24 @@ sunrealtype N_VMinQuotient_Pthreads(N_Vector num, N_Vector denom)
   free(threads);
   free(thread_data);
 
-  return (min);
+  return(min);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VConstrMask
  */
 
-static void* nvMinQuotientPt(void* thread_data)
+static void *N_VMinQuotient_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *nd, *dd;
-  sunrealtype local_min, *global_min;
-  Pthreads_Data* my_data;
-  pthread_mutex_t* global_mutex;
+  realtype *nd, *dd;
+  realtype local_min, *global_min;
+  Pthreads_Data *my_data;
+  pthread_mutex_t *global_mutex;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   nd = my_data->v1;
   dd = my_data->v2;
@@ -2332,21 +2332,23 @@ static void* nvMinQuotientPt(void* thread_data)
   end   = my_data->end;
 
   /* compute minimum quotient */
-  local_min = SUN_BIG_REAL;
-  for (i = start; i < end; i++)
-  {
-    if (dd[i] == ZERO) { continue; }
-    local_min = SUNMIN(local_min, nd[i] / dd[i]);
+  local_min = BIG_REAL;
+  for (i = start; i < end; i++) {
+    if (dd[i] == ZERO)
+      continue;
+    local_min = SUNMIN(local_min, nd[i]/dd[i]);
   }
 
   /* update global min */
   pthread_mutex_lock(global_mutex);
-  if (local_min < *global_min) { *global_min = local_min; }
+  if (local_min < *global_min)
+    *global_min = local_min;
   pthread_mutex_unlock(global_mutex);
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /*
  * -----------------------------------------------------------------------------
@@ -2354,59 +2356,50 @@ static void* nvMinQuotientPt(void* thread_data)
  * -----------------------------------------------------------------------------
  */
 
+
 /* -----------------------------------------------------------------------------
  * Compute the linear combination z = c[i]*X[i]
  */
 
-SUNErrCode N_VLinearCombination_Pthreads(int nvec, sunrealtype* c, N_Vector* X,
-                                         N_Vector z)
+int N_VLinearCombination_Pthreads(int nvec, realtype* c, N_Vector* X, N_Vector z)
 {
-  SUNFunctionBegin(X[0]->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
 
   /* should have called N_VScale */
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
     N_VScale_Pthreads(c[0], X[0], z);
-    SUNCheckLastErr();
-    return SUN_SUCCESS;
+    return(0);
   }
 
   /* should have called N_VLinearSum */
-  if (nvec == 2)
-  {
+  if (nvec == 2) {
     N_VLinearSum_Pthreads(c[0], X[0], c[1], X[1], z);
-    SUNCheckLastErr();
-    return SUN_SUCCESS;
+    return(0);
   }
 
   /* get vector length and data array */
-  N        = NV_LENGTH_PT(z);
-  nthreads = NV_NUM_THREADS_PT(z);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(z);
+  nthreads    = NV_NUM_THREADS_PT(z);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec  = nvec;
@@ -2415,37 +2408,39 @@ SUNErrCode N_VLinearCombination_Pthreads(int nvec, sunrealtype* c, N_Vector* X,
     thread_data[i].x1    = z;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvLinearCombinationPt,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VLinearCombination_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VLinearCombination
  */
 
-static void* nvLinearCombinationPt(void* thread_data)
+static void *N_VLinearCombination_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype* c  = NULL;
-  sunrealtype* xd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype* c=NULL;
+  realtype* xd=NULL;
+  realtype* zd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
@@ -2456,12 +2451,12 @@ static void* nvLinearCombinationPt(void* thread_data)
   /*
    * X[0] += c[i]*X[i], i = 1,...,nvec-1
    */
-  if ((my_data->Y1[0] == my_data->x1) && (c[0] == ONE))
-  {
-    for (i = 1; i < my_data->nvec; i++)
-    {
+  if ((my_data->Y1[0] == my_data->x1) && (c[0] == ONE)) {
+    for (i=1; i<my_data->nvec; i++) {
       xd = NV_DATA_PT(my_data->Y1[i]);
-      for (j = start; j < end; j++) { zd[j] += c[i] * xd[j]; }
+      for (j=start; j<end; j++) {
+        zd[j] += c[i] * xd[j];
+      }
     }
     pthread_exit(NULL);
   }
@@ -2469,13 +2464,15 @@ static void* nvLinearCombinationPt(void* thread_data)
   /*
    * X[0] = c[0] * X[0] + sum{ c[i] * X[i] }, i = 1,...,nvec-1
    */
-  if (my_data->Y1[0] == my_data->x1)
-  {
-    for (j = start; j < end; j++) { zd[j] *= c[0]; }
-    for (i = 1; i < my_data->nvec; i++)
-    {
+  if (my_data->Y1[0] == my_data->x1) {
+    for (j=start; j<end; j++) {
+      zd[j] *= c[0];
+    }
+    for (i=1; i<my_data->nvec; i++) {
       xd = NV_DATA_PT(my_data->Y1[i]);
-      for (j = start; j < end; j++) { zd[j] += c[i] * xd[j]; }
+      for (j=start; j<end; j++) {
+        zd[j] += c[i] * xd[j];
+      }
     }
     pthread_exit(NULL);
   }
@@ -2484,60 +2481,56 @@ static void* nvLinearCombinationPt(void* thread_data)
    * z = sum{ c[i] * X[i] }, i = 0,...,nvec-1
    */
   xd = NV_DATA_PT(my_data->Y1[0]);
-  for (j = start; j < end; j++) { zd[j] = c[0] * xd[j]; }
-  for (i = 1; i < my_data->nvec; i++)
-  {
+  for (j=start; j<end; j++) {
+    zd[j] = c[0] * xd[j];
+  }
+  for (i=1; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
-    for (j = start; j < end; j++) { zd[j] += c[i] * xd[j]; }
+    for (j=start; j<end; j++) {
+      zd[j] += c[i] * xd[j];
+    }
   }
   pthread_exit(NULL);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Compute multiple linear sums Z[i] = Y[i] + a*x
  */
 
-SUNErrCode N_VScaleAddMulti_Pthreads(int nvec, sunrealtype* a, N_Vector x,
-                                     N_Vector* Y, N_Vector* Z)
+int N_VScaleAddMulti_Pthreads(int nvec, realtype* a, N_Vector x, N_Vector* Y, N_Vector* Z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
 
   /* should have called N_VLinearSum */
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
     N_VLinearSum_Pthreads(a[0], x, ONE, Y[0], Z[0]);
-    SUNCheckLastErr();
-    return SUN_SUCCESS;
+    return(0);
   }
 
   /* get vector length and data array */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec  = nvec;
@@ -2547,37 +2540,40 @@ SUNErrCode N_VScaleAddMulti_Pthreads(int nvec, sunrealtype* a, N_Vector x,
     thread_data[i].Y2    = Z;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvScaleAddMultiPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VScaleAddMulti_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VScaleAddMulti
  */
 
-static void* nvScaleAddMultiPt(void* thread_data)
+static void *N_VScaleAddMulti_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype* a  = NULL;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype* a=NULL;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
+  realtype* zd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
@@ -2588,12 +2584,12 @@ static void* nvScaleAddMultiPt(void* thread_data)
   /*
    * Y[i][j] += a[i] * x[j]
    */
-  if (my_data->Y1 == my_data->Y2)
-  {
-    for (i = 0; i < my_data->nvec; i++)
-    {
+  if (my_data->Y1 == my_data->Y2) {
+    for (i=0; i<my_data->nvec; i++) {
       yd = NV_DATA_PT(my_data->Y1[i]);
-      for (j = start; j < end; j++) { yd[j] += a[i] * xd[j]; }
+      for (j=start; j<end; j++) {
+        yd[j] += a[i] * xd[j];
+      }
     }
     pthread_exit(NULL);
   }
@@ -2601,52 +2597,48 @@ static void* nvScaleAddMultiPt(void* thread_data)
   /*
    * Z[i][j] = Y[i][j] + a[i] * x[j]
    */
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     yd = NV_DATA_PT(my_data->Y1[i]);
     zd = NV_DATA_PT(my_data->Y2[i]);
-    for (j = start; j < end; j++) { zd[j] = a[i] * xd[j] + yd[j]; }
+    for (j=start; j<end; j++) {
+      zd[j] = a[i] * xd[j] + yd[j];
+    }
   }
   pthread_exit(NULL);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Compute the dot product of a vector with multiple vectors, a[i] = sum(x*Y[i])
  */
 
-SUNErrCode N_VDotProdMulti_Pthreads(int nvec, N_Vector x, N_Vector* Y,
-                                    sunrealtype* dotprods)
+int N_VDotProdMulti_Pthreads(int nvec, N_Vector x, N_Vector* Y, realtype* dotprods)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
 
   /* should have called N_VDotProd */
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
     dotprods[0] = N_VDotProd_Pthreads(x, Y[0]);
-    SUNCheckLastErr();
-    return SUN_SUCCESS;
+    return(0);
   }
 
   /* initialize output array */
-  for (i = 0; i < nvec; i++) { dotprods[i] = ZERO; }
+  for (i=0; i<nvec; i++)
+    dotprods[i] = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -2655,13 +2647,12 @@ SUNErrCode N_VDotProdMulti_Pthreads(int nvec, N_Vector x, N_Vector* Y,
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec  = nvec;
@@ -2672,11 +2663,13 @@ SUNErrCode N_VDotProdMulti_Pthreads(int nvec, N_Vector x, N_Vector* Y,
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvDotProdMultiPt, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VDotProdMulti_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -2684,27 +2677,28 @@ SUNErrCode N_VDotProdMulti_Pthreads(int nvec, N_Vector x, N_Vector* Y,
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VDotProdMulti
  */
 
-static void* nvDotProdMultiPt(void* thread_data)
+static void *N_VDotProdMulti_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
-  pthread_mutex_t* lock;
+  Pthreads_Data   *my_data;
+  sunindextype    j, start, end;
+  pthread_mutex_t *lock;
 
-  int i;
-  sunrealtype sum;
-  sunrealtype* dotprods = NULL;
-  sunrealtype* xd       = NULL;
-  sunrealtype* yd       = NULL;
+  int       i;
+  realtype  sum;
+  realtype* dotprods=NULL;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
@@ -2714,11 +2708,12 @@ static void* nvDotProdMultiPt(void* thread_data)
   dotprods = my_data->cvals;
 
   /* compute multiple dot products */
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     yd  = NV_DATA_PT(my_data->Y1[i]);
     sum = ZERO;
-    for (j = start; j < end; j++) { sum += xd[j] * yd[j]; }
+    for (j=start; j<end; j++) {
+      sum += xd[j] * yd[j];
+    }
     /* update global sum */
     pthread_mutex_lock(lock);
     dotprods[i] += sum;
@@ -2729,115 +2724,91 @@ static void* nvDotProdMultiPt(void* thread_data)
   pthread_exit(NULL);
 }
 
+
 /*
  * -----------------------------------------------------------------------------
  * vector array operations
  * -----------------------------------------------------------------------------
  */
 
+
 /* -----------------------------------------------------------------------------
  * Compute multiple linear sums Z[i] = a*X[i] + b*Y[i]
  */
 
-SUNErrCode N_VLinearSumVectorArray_Pthreads(int nvec, sunrealtype a,
-                                            N_Vector* X, sunrealtype b,
-                                            N_Vector* Y, N_Vector* Z)
+int N_VLinearSumVectorArray_Pthreads(int nvec, realtype a, N_Vector* X,
+                                     realtype b, N_Vector* Y,  N_Vector* Z)
 {
-  SUNFunctionBegin(X[0]->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
-  sunrealtype c;
-  N_Vector* V1;
-  N_Vector* V2;
-  sunbooleantype test;
+  realtype    c;
+  N_Vector*  V1;
+  N_Vector*  V2;
+  booleantype test;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
 
   /* should have called N_VLinearSum */
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
     N_VLinearSum_Pthreads(a, X[0], b, Y[0], Z[0]);
-    SUNCheckLastErr();
-    return SUN_SUCCESS;
+    return(0);
   }
 
   /* BLAS usage: axpy y <- ax+y */
   if ((b == ONE) && (Z == Y))
-  {
-    VaxpyVectorArray_Pthreads(nvec, a, X, Y);
-    return SUN_SUCCESS;
-  }
+    return(VaxpyVectorArray_Pthreads(nvec, a, X, Y));
 
   /* BLAS usage: axpy x <- by+x */
   if ((a == ONE) && (Z == X))
-  {
-    VaxpyVectorArray_Pthreads(nvec, b, Y, X);
-    return SUN_SUCCESS;
-  }
+    return(VaxpyVectorArray_Pthreads(nvec, b, Y, X));
 
   /* Case: a == b == 1.0 */
   if ((a == ONE) && (b == ONE))
-  {
-    VSumVectorArray_Pthreads(nvec, X, Y, Z);
-    return SUN_SUCCESS;
-  }
+    return(VSumVectorArray_Pthreads(nvec, X, Y, Z));
 
   /* Cases:                    */
   /*   (1) a == 1.0, b = -1.0, */
   /*   (2) a == -1.0, b == 1.0 */
-  if ((test = ((a == ONE) && (b == -ONE))) || ((a == -ONE) && (b == ONE)))
-  {
+  if ((test = ((a == ONE) && (b == -ONE))) || ((a == -ONE) && (b == ONE))) {
     V1 = test ? Y : X;
     V2 = test ? X : Y;
-    VDiffVectorArray_Pthreads(nvec, V2, V1, Z);
-    return SUN_SUCCESS;
+    return(VDiffVectorArray_Pthreads(nvec, V2, V1, Z));
   }
 
   /* Cases:                                                  */
   /*   (1) a == 1.0, b == other or 0.0,                      */
   /*   (2) a == other or 0.0, b == 1.0                       */
   /* if a or b is 0.0, then user should have called N_VScale */
-  if ((test = (a == ONE)) || (b == ONE))
-  {
+  if ((test = (a == ONE)) || (b == ONE)) {
     c  = test ? b : a;
     V1 = test ? Y : X;
     V2 = test ? X : Y;
-    VLin1VectorArray_Pthreads(nvec, c, V1, V2, Z);
-    return SUN_SUCCESS;
+    return(VLin1VectorArray_Pthreads(nvec, c, V1, V2, Z));
   }
 
   /* Cases:                     */
   /*   (1) a == -1.0, b != 1.0, */
   /*   (2) a != 1.0, b == -1.0  */
-  if ((test = (a == -ONE)) || (b == -ONE))
-  {
-    c  = test ? b : a;
+  if ((test = (a == -ONE)) || (b == -ONE)) {
+    c = test ? b : a;
     V1 = test ? Y : X;
     V2 = test ? X : Y;
-    VLin2VectorArray_Pthreads(nvec, c, V1, V2, Z);
-    return SUN_SUCCESS;
+    return(VLin2VectorArray_Pthreads(nvec, c, V1, V2, Z));
   }
 
   /* Case: a == b                                                         */
   /* catches case both a and b are 0.0 - user should have called N_VConst */
   if (a == b)
-  {
-    VScaleSumVectorArray_Pthreads(nvec, a, X, Y, Z);
-    return SUN_SUCCESS;
-  }
+    return(VScaleSumVectorArray_Pthreads(nvec, a, X, Y, Z));
 
   /* Case: a == -b */
   if (a == -b)
-  {
-    VScaleDiffVectorArray_Pthreads(nvec, a, X, Y, Z);
-    return SUN_SUCCESS;
-  }
+    return(VScaleDiffVectorArray_Pthreads(nvec, a, X, Y, Z));
 
   /* Do all cases not handled above:                               */
   /*   (1) a == other, b == 0.0 - user should have called N_VScale */
@@ -2845,24 +2816,21 @@ SUNErrCode N_VLinearSumVectorArray_Pthreads(int nvec, sunrealtype a,
   /*   (3) a,b == other, a !=b, a != -b                            */
 
   /* get vector length and data array */
-  N        = NV_LENGTH_PT(Z[0]);
-  nthreads = NV_NUM_THREADS_PT(Z[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(Z[0]);
+  nthreads    = NV_NUM_THREADS_PT(Z[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec = nvec;
@@ -2873,38 +2841,41 @@ SUNErrCode N_VLinearSumVectorArray_Pthreads(int nvec, sunrealtype a,
     thread_data[i].Y3   = Z;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvLinearSumVectorArrayPt,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VLinearSumVectorArray_PT,
+                   (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VLinearSumVectorArray
  */
 
-static void* nvLinearSumVectorArrayPt(void* thread_data)
+static void *N_VLinearSumVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype a, b;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype  a, b;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
+  realtype* zd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
@@ -2913,63 +2884,57 @@ static void* nvLinearSumVectorArrayPt(void* thread_data)
   b = my_data->c2;
 
   /* compute linear sum for each vector pair in vector arrays */
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
     yd = NV_DATA_PT(my_data->Y2[i]);
     zd = NV_DATA_PT(my_data->Y3[i]);
-    for (j = start; j < end; j++) { zd[j] = a * xd[j] + b * yd[j]; }
+    for (j=start; j<end; j++) {
+      zd[j] = a * xd[j] + b * yd[j];
+    }
   }
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* -----------------------------------------------------------------------------
  * Scale multiple vectors Z[i] = c[i]*X[i]
  */
 
-SUNErrCode N_VScaleVectorArray_Pthreads(int nvec, sunrealtype* c, N_Vector* X,
-                                        N_Vector* Z)
+int N_VScaleVectorArray_Pthreads(int nvec, realtype* c, N_Vector* X, N_Vector* Z)
 {
-  SUNFunctionBegin(X[0]->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
 
   /* should have called N_VScale */
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
     N_VScale_Pthreads(c[0], X[0], Z[0]);
-    SUNCheckLastErr();
-    return SUN_SUCCESS;
+    return(0);
   }
 
   /* get vector length and data array */
-  N        = NV_LENGTH_PT(Z[0]);
-  nthreads = NV_NUM_THREADS_PT(Z[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(Z[0]);
+  nthreads    = NV_NUM_THREADS_PT(Z[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec  = nvec;
@@ -2978,37 +2943,40 @@ SUNErrCode N_VScaleVectorArray_Pthreads(int nvec, sunrealtype* c, N_Vector* X,
     thread_data[i].Y2    = Z;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvScaleVectorArrayPt,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VScaleVectorArray_PT,
+                   (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VScaleVectorArray
  */
 
-static void* nvScaleVectorArrayPt(void* thread_data)
+static void *N_VScaleVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype* c;
-  sunrealtype* xd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype* c;
+  realtype* xd=NULL;
+  realtype* zd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
@@ -3018,12 +2986,12 @@ static void* nvScaleVectorArrayPt(void* thread_data)
   /*
    * X[i] *= c[i]
    */
-  if (my_data->Y1 == my_data->Y2)
-  {
-    for (i = 0; i < my_data->nvec; i++)
-    {
+  if (my_data->Y1 == my_data->Y2) {
+    for (i=0; i<my_data->nvec; i++) {
       xd = NV_DATA_PT(my_data->Y1[i]);
-      for (j = start; j < end; j++) { xd[j] *= c[i]; }
+      for (j=start; j<end; j++) {
+        xd[j] *= c[i];
+      }
     }
     pthread_exit(NULL);
   }
@@ -3031,59 +2999,54 @@ static void* nvScaleVectorArrayPt(void* thread_data)
   /*
    * Z[i] = c[i] * X[i]
    */
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
     zd = NV_DATA_PT(my_data->Y2[i]);
-    for (j = start; j < end; j++) { zd[j] = c[i] * xd[j]; }
+    for (j=start; j<end; j++) {
+      zd[j] = c[i] * xd[j];
+    }
   }
   pthread_exit(NULL);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Set multiple vectors to a constant value Z[i] = c
  */
 
-SUNErrCode N_VConstVectorArray_Pthreads(int nvec, sunrealtype c, N_Vector* Z)
+int N_VConstVectorArray_Pthreads(int nvec, realtype c, N_Vector* Z)
 {
-  SUNFunctionBegin(Z[0]->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
 
   /* should have called N_VConst */
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
     N_VConst_Pthreads(c, Z[0]);
-    SUNCheckLastErr();
-    return SUN_SUCCESS;
+    return(0);
   }
 
   /* get vector length and data array */
-  N        = NV_LENGTH_PT(Z[0]);
-  nthreads = NV_NUM_THREADS_PT(Z[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(Z[0]);
+  nthreads    = NV_NUM_THREADS_PT(Z[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec = nvec;
@@ -3091,87 +3054,86 @@ SUNErrCode N_VConstVectorArray_Pthreads(int nvec, sunrealtype c, N_Vector* Z)
     thread_data[i].Y1   = Z;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvConstVectorArrayPt,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VConstVectorArray_PT,
+                   (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VConstVectorArray
  */
 
-static void* nvConstVectorArrayPt(void* thread_data)
+static void *N_VConstVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype* zd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
 
   /* set each vector in the vector array to a constant */
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     zd = NV_DATA_PT(my_data->Y1[i]);
-    for (j = start; j < end; j++) { zd[j] = my_data->c1; }
+    for (j=start; j<end; j++) {
+      zd[j] = my_data->c1;
+    }
   }
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute the weighted root mean square norm of multiple vectors
  */
 
-SUNErrCode N_VWrmsNormVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* W,
-                                           sunrealtype* nrm)
+int N_VWrmsNormVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* W, realtype* nrm)
 {
-  SUNFunctionBegin(X[0]->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
 
   /* should have called N_VWrmsNorm */
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
     nrm[0] = N_VWrmsNorm_Pthreads(X[0], W[0]);
-    SUNCheckLastErr();
-    return SUN_SUCCESS;
+    return(0);
   }
 
   /* initialize output array */
-  for (i = 0; i < nvec; i++) { nrm[i] = ZERO; }
+  for (i=0; i<nvec; i++)
+    nrm[i] = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(X[0]);
+  nthreads    = NV_NUM_THREADS_PT(X[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -3180,13 +3142,12 @@ SUNErrCode N_VWrmsNormVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* W,
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec  = nvec;
@@ -3197,15 +3158,18 @@ SUNErrCode N_VWrmsNormVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* W,
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvWrmsNormVectorArrayPt,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VWrmsNormVectorArray_PT,
+                   (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* finalize wrms calculation */
-  for (i = 0; i < nvec; i++) { nrm[i] = SUNRsqrt(nrm[i] / N); }
+  for (i=0; i<nvec; i++)
+    nrm[i] = SUNRsqrt(nrm[i]/N);
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -3213,27 +3177,28 @@ SUNErrCode N_VWrmsNormVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* W,
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VWrmsNormVectorArray
  */
 
-static void* nvWrmsNormVectorArrayPt(void* thread_data)
+static void *N_VWrmsNormVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
-  pthread_mutex_t* lock;
+  Pthreads_Data   *my_data;
+  sunindextype    j, start, end;
+  pthread_mutex_t *lock;
 
-  int i;
-  sunrealtype sum;
-  sunrealtype* nrm = NULL;
-  sunrealtype* xd  = NULL;
-  sunrealtype* wd  = NULL;
+  int       i;
+  realtype  sum;
+  realtype* nrm=NULL;
+  realtype* xd=NULL;
+  realtype* wd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
@@ -3242,12 +3207,13 @@ static void* nvWrmsNormVectorArrayPt(void* thread_data)
   nrm = my_data->cvals;
 
   /* compute the WRMS norm for each vector in the vector array */
-  for (i = 0; i < my_data->nvec; i++)
-  {
-    xd  = NV_DATA_PT(my_data->Y1[i]);
-    wd  = NV_DATA_PT(my_data->Y2[i]);
+  for (i=0; i<my_data->nvec; i++) {
+    xd = NV_DATA_PT(my_data->Y1[i]);
+    wd = NV_DATA_PT(my_data->Y2[i]);
     sum = ZERO;
-    for (j = start; j < end; j++) { sum += SUNSQR(xd[j] * wd[j]); }
+    for (j=start; j<end; j++) {
+      sum += SUNSQR(xd[j] * wd[j]);
+    }
     /* update global sum */
     pthread_mutex_lock(lock);
     nrm[i] += sum;
@@ -3258,43 +3224,39 @@ static void* nvWrmsNormVectorArrayPt(void* thread_data)
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute the weighted root mean square norm of multiple vectors
  */
 
-SUNErrCode N_VWrmsNormMaskVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* W,
-                                               N_Vector id, sunrealtype* nrm)
+int N_VWrmsNormMaskVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* W,
+                                        N_Vector id, realtype* nrm)
 {
-  SUNFunctionBegin(X[0]->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
-  pthread_attr_t attr;
+  sunindextype    N;
+  int             i, nthreads;
+  pthread_t       *threads;
+  Pthreads_Data   *thread_data;
+  pthread_attr_t  attr;
   pthread_mutex_t global_mutex;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
 
   /* should have called N_VWrmsNorm */
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
     nrm[0] = N_VWrmsNormMask_Pthreads(X[0], W[0], id);
-    SUNCheckLastErr();
-    return SUN_SUCCESS;
+    return(0);
   }
 
   /* initialize output array */
-  for (i = 0; i < nvec; i++) { nrm[i] = ZERO; }
+  for (i=0; i<nvec; i++)
+    nrm[i] = ZERO;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(X[0]);
+  nthreads    = NV_NUM_THREADS_PT(X[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
@@ -3303,13 +3265,12 @@ SUNErrCode N_VWrmsNormMaskVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* 
   /* lock for reduction */
   pthread_mutex_init(&global_mutex, NULL);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec  = nvec;
@@ -3321,15 +3282,18 @@ SUNErrCode N_VWrmsNormMaskVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* 
     thread_data[i].global_mutex = &global_mutex;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvWrmsNormMaskVectorArrayPt,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VWrmsNormMaskVectorArray_PT,
+                   (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* finalize wrms calculation */
-  for (i = 0; i < nvec; i++) { nrm[i] = SUNRsqrt(nrm[i] / N); }
+  for (i=0; i<nvec; i++)
+    nrm[i] = SUNRsqrt(nrm[i]/N);
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -3337,28 +3301,29 @@ SUNErrCode N_VWrmsNormMaskVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* 
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Pthread companion function to N_VWrmsNormVectorArray
  */
 
-static void* nvWrmsNormMaskVectorArrayPt(void* thread_data)
+static void *N_VWrmsNormMaskVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
-  pthread_mutex_t* lock;
+  Pthreads_Data   *my_data;
+  sunindextype    j, start, end;
+  pthread_mutex_t *lock;
 
-  int i;
-  sunrealtype sum;
-  sunrealtype* nrm = NULL;
-  sunrealtype* xd  = NULL;
-  sunrealtype* wd  = NULL;
-  sunrealtype* idd = NULL;
+  int       i;
+  realtype  sum;
+  realtype* nrm=NULL;
+  realtype* xd=NULL;
+  realtype* wd=NULL;
+  realtype* idd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
@@ -3368,14 +3333,13 @@ static void* nvWrmsNormMaskVectorArrayPt(void* thread_data)
   idd = NV_DATA_PT(my_data->x1);
 
   /* compute the WRMS norm for each vector in the vector array */
-  for (i = 0; i < my_data->nvec; i++)
-  {
-    xd  = NV_DATA_PT(my_data->Y1[i]);
-    wd  = NV_DATA_PT(my_data->Y2[i]);
+  for (i=0; i<my_data->nvec; i++) {
+    xd = NV_DATA_PT(my_data->Y1[i]);
+    wd = NV_DATA_PT(my_data->Y2[i]);
     sum = ZERO;
-    for (j = start; j < end; j++)
-    {
-      if (idd[j] > ZERO) { sum += SUNSQR(xd[j] * wd[j]); }
+    for (j=start; j<end; j++) {
+      if (idd[j] > ZERO)
+        sum += SUNSQR(xd[j] * wd[j]);
     }
     /* update global sum */
     pthread_mutex_lock(lock);
@@ -3387,59 +3351,54 @@ static void* nvWrmsNormMaskVectorArrayPt(void* thread_data)
   pthread_exit(NULL);
 }
 
+
 /* -----------------------------------------------------------------------------
  * Scale and add a vector to multiple vectors Z = Y + a*X
  */
 
-SUNErrCode N_VScaleAddMultiVectorArray_Pthreads(int nvec, int nsum,
-                                                sunrealtype* a, N_Vector* X,
-                                                N_Vector** Y, N_Vector** Z)
+int N_VScaleAddMultiVectorArray_Pthreads(int nvec, int nsum, realtype* a,
+                                          N_Vector* X, N_Vector** Y, N_Vector** Z)
 {
-  SUNFunctionBegin(X[0]->sunctx);
-
-  sunindextype N;
-  int i, j, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, j, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
-  N_Vector* YY;
-  N_Vector* ZZ;
+  int          retval;
+  N_Vector*   YY;
+  N_Vector*   ZZ;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1 && nsum >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
+  if (nsum < 1) return(-1);
 
   /* ---------------------------
    * Special cases for nvec == 1
    * --------------------------- */
 
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
+
     /* should have called N_VLinearSum */
-    if (nsum == 1)
-    {
+    if (nsum == 1) {
       N_VLinearSum_Pthreads(a[0], X[0], ONE, Y[0][0], Z[0][0]);
-      SUNCheckLastErr();
-      return SUN_SUCCESS;
+      return(0);
     }
 
     /* should have called N_VScaleAddMulti */
-    YY = (N_Vector*)malloc(nsum * sizeof(N_Vector));
-    SUNAssert(YY, SUN_ERR_MALLOC_FAIL);
-    ZZ = (N_Vector*)malloc(nsum * sizeof(N_Vector));
-    SUNAssert(ZZ, SUN_ERR_MALLOC_FAIL);
+    YY = (N_Vector*) malloc(nsum * sizeof(N_Vector));
+    ZZ = (N_Vector*) malloc(nsum * sizeof(N_Vector));
 
-    for (j = 0; j < nsum; j++)
-    {
+    for (j=0; j<nsum; j++) {
       YY[j] = Y[j][0];
       ZZ[j] = Z[j][0];
     }
 
-    SUNCheckCall(N_VScaleAddMulti_Pthreads(nsum, a, X[0], YY, ZZ));
+    retval = N_VScaleAddMulti_Pthreads(nsum, a, X[0], YY, ZZ);
 
     free(YY);
     free(ZZ);
-    return SUN_SUCCESS;
+    return(retval);
   }
 
   /* --------------------------
@@ -3447,10 +3406,9 @@ SUNErrCode N_VScaleAddMultiVectorArray_Pthreads(int nvec, int nsum,
    * -------------------------- */
 
   /* should have called N_VLinearSumVectorArray */
-  if (nsum == 1)
-  {
-    SUNCheckCall(N_VLinearSumVectorArray_Pthreads(nvec, a[0], X, ONE, Y[0], Z[0]));
-    return SUN_SUCCESS;
+  if (nsum == 1) {
+    retval = N_VLinearSumVectorArray_Pthreads(nvec, a[0], X, ONE, Y[0], Z[0]);
+    return(retval);
   }
 
   /* ----------------------------
@@ -3458,24 +3416,21 @@ SUNErrCode N_VScaleAddMultiVectorArray_Pthreads(int nvec, int nsum,
    * ---------------------------- */
 
   /* get vector length and data array */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(X[0]);
+  nthreads    = NV_NUM_THREADS_PT(X[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec  = nvec;
@@ -3486,38 +3441,41 @@ SUNErrCode N_VScaleAddMultiVectorArray_Pthreads(int nvec, int nsum,
     thread_data[i].ZZ2   = Z;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvScaleAddMultiVectorArrayPt,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VScaleAddMultiVectorArray_PT,
+                   (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VScaleAddMultiVectorArray
  */
 
-static void* nvScaleAddMultiVectorArrayPt(void* thread_data)
+static void *N_VScaleAddMultiVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype k, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  k, start, end;
 
-  int i, j;
-  sunrealtype* a  = NULL;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
-  sunrealtype* zd = NULL;
+  int       i, j;
+  realtype* a=NULL;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
+  realtype* zd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
@@ -3527,15 +3485,14 @@ static void* nvScaleAddMultiVectorArrayPt(void* thread_data)
   /*
    * Y[i][j] += a[i] * x[j]
    */
-  if (my_data->ZZ1 == my_data->ZZ2)
-  {
-    for (i = 0; i < my_data->nvec; i++)
-    {
+  if (my_data->ZZ1 == my_data->ZZ2) {
+    for (i=0; i<my_data->nvec; i++) {
       xd = NV_DATA_PT(my_data->Y1[i]);
-      for (j = 0; j < my_data->nsum; j++)
-      {
+      for (j=0; j<my_data->nsum; j++){
         yd = NV_DATA_PT(my_data->ZZ1[j][i]);
-        for (k = start; k < end; k++) { yd[k] += a[j] * xd[k]; }
+        for (k=start; k<end; k++) {
+          yd[k] += a[j] * xd[k];
+        }
       }
     }
     pthread_exit(NULL);
@@ -3544,73 +3501,70 @@ static void* nvScaleAddMultiVectorArrayPt(void* thread_data)
   /*
    * Z[i][j] = Y[i][j] + a[i] * x[j]
    */
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
-    for (j = 0; j < my_data->nsum; j++)
-    {
+    for (j=0; j<my_data->nsum; j++){
       yd = NV_DATA_PT(my_data->ZZ1[j][i]);
       zd = NV_DATA_PT(my_data->ZZ2[j][i]);
-      for (k = start; k < end; k++) { zd[k] = a[j] * xd[k] + yd[k]; }
+      for (k=start; k<end; k++) {
+        zd[k] = a[j] * xd[k] + yd[k];
+      }
     }
   }
   pthread_exit(NULL);
 }
 
+
 /* -----------------------------------------------------------------------------
  * Compute a linear combination for multiple vectors
  */
 
-SUNErrCode N_VLinearCombinationVectorArray_Pthreads(int nvec, int nsum,
-                                                    sunrealtype* c,
-                                                    N_Vector** X, N_Vector* Z)
+int N_VLinearCombinationVectorArray_Pthreads(int nvec, int nsum, realtype* c,
+                                           N_Vector** X, N_Vector* Z)
 {
-  SUNFunctionBegin(X[0][0]->sunctx);
-
-  sunindextype N;
-  int i, j, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, j, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
-  sunrealtype* ctmp;
-  N_Vector* Y;
+  int          retval;
+  realtype*    ctmp;
+  N_Vector*   Y;
 
   /* invalid number of vectors */
-  SUNAssert(nvec >= 1 && nsum >= 1, SUN_ERR_ARG_OUTOFRANGE);
+  if (nvec < 1) return(-1);
+  if (nsum < 1) return(-1);
 
   /* ---------------------------
    * Special cases for nvec == 1
    * --------------------------- */
 
-  if (nvec == 1)
-  {
+  if (nvec == 1) {
+
     /* should have called N_VScale */
-    if (nsum == 1)
-    {
+    if (nsum == 1) {
       N_VScale_Pthreads(c[0], X[0][0], Z[0]);
-      SUNCheckLastErr();
-      return SUN_SUCCESS;
+      return(0);
     }
 
     /* should have called N_VLinearSum */
-    if (nsum == 2)
-    {
+    if (nsum == 2) {
       N_VLinearSum_Pthreads(c[0], X[0][0], c[1], X[1][0], Z[0]);
-      SUNCheckLastErr();
-      return SUN_SUCCESS;
+      return(0);
     }
 
     /* should have called N_VLinearCombination */
-    Y = (N_Vector*)malloc(nsum * sizeof(N_Vector));
-    SUNAssert(Y, SUN_ERR_MALLOC_FAIL);
+    Y = (N_Vector*) malloc(nsum * sizeof(N_Vector));
 
-    for (i = 0; i < nsum; i++) { Y[i] = X[i][0]; }
+    for (i=0; i<nsum; i++) {
+      Y[i] = X[i][0];
+    }
 
-    SUNCheckCall(N_VLinearCombination_Pthreads(nsum, c, Y, Z[0]));
+    retval = N_VLinearCombination_Pthreads(nsum, c, Y, Z[0]);
 
     free(Y);
-    return SUN_SUCCESS;
+    return(retval);
   }
 
   /* --------------------------
@@ -3618,24 +3572,24 @@ SUNErrCode N_VLinearCombinationVectorArray_Pthreads(int nvec, int nsum,
    * -------------------------- */
 
   /* should have called N_VScaleVectorArray */
-  if (nsum == 1)
-  {
-    ctmp = (sunrealtype*)malloc(nvec * sizeof(sunrealtype));
+  if (nsum == 1) {
 
-    for (j = 0; j < nvec; j++) { ctmp[j] = c[0]; }
+    ctmp = (realtype*) malloc(nvec * sizeof(realtype));
 
-    SUNCheckCall(N_VScaleVectorArray_Pthreads(nvec, ctmp, X[0], Z));
+    for (j=0; j<nvec; j++) {
+      ctmp[j] = c[0];
+    }
+
+    retval = N_VScaleVectorArray_Pthreads(nvec, ctmp, X[0], Z);
 
     free(ctmp);
-    return SUN_SUCCESS;
+    return(retval);
   }
 
   /* should have called N_VLinearSumVectorArray */
-  if (nsum == 2)
-  {
-    SUNCheckCall(
-      N_VLinearSumVectorArray_Pthreads(nvec, c[0], X[0], c[1], X[1], Z));
-    return SUN_SUCCESS;
+  if (nsum == 2) {
+    retval = N_VLinearSumVectorArray_Pthreads(nvec, c[0], X[0], c[1], X[1], Z);
+    return(retval);
   }
 
   /* --------------------------
@@ -3643,24 +3597,21 @@ SUNErrCode N_VLinearCombinationVectorArray_Pthreads(int nvec, int nsum,
    * -------------------------- */
 
   /* get vector length and data array */
-  N        = NV_LENGTH_PT(Z[0]);
-  nthreads = NV_NUM_THREADS_PT(Z[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(Z[0]);
+  nthreads    = NV_NUM_THREADS_PT(Z[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].nvec  = nvec;
@@ -3670,38 +3621,41 @@ SUNErrCode N_VLinearCombinationVectorArray_Pthreads(int nvec, int nsum,
     thread_data[i].Y1    = Z;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, nvLinearCombinationVectorArrayPt,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, N_VLinearCombinationVectorArray_PT,
+                   (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VLinearCombinationVectorArray
  */
 
-static void* nvLinearCombinationVectorArrayPt(void* thread_data)
+static void *N_VLinearCombinationVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype k, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  k, start, end;
 
-  int i; /* vector arrays index in summation [0,nsum) */
-  int j; /* vector index in vector array     [0,nvec) */
-  sunrealtype* c  = NULL;
-  sunrealtype* zd = NULL;
-  sunrealtype* xd = NULL;
+  int       i; /* vector arrays index in summation [0,nsum) */
+  int       j; /* vector index in vector array     [0,nvec) */
+  realtype* c=NULL;
+  realtype* zd=NULL;
+  realtype* xd=NULL;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   start = my_data->start;
   end   = my_data->end;
@@ -3711,15 +3665,14 @@ static void* nvLinearCombinationVectorArrayPt(void* thread_data)
   /*
    * X[0][j] += c[i]*X[i][j], i = 1,...,nvec-1
    */
-  if ((my_data->ZZ1[0] == my_data->Y1) && (c[0] == ONE))
-  {
-    for (j = 0; j < my_data->nvec; j++)
-    {
+  if ((my_data->ZZ1[0] == my_data->Y1) && (c[0] == ONE)) {
+    for (j=0; j<my_data->nvec; j++) {
       zd = NV_DATA_PT(my_data->Y1[j]);
-      for (i = 1; i < my_data->nsum; i++)
-      {
+      for (i=1; i<my_data->nsum; i++) {
         xd = NV_DATA_PT(my_data->ZZ1[i][j]);
-        for (k = start; k < end; k++) { zd[k] += c[i] * xd[k]; }
+        for (k=start; k<end; k++) {
+          zd[k] += c[i] * xd[k];
+        }
       }
     }
     pthread_exit(NULL);
@@ -3728,16 +3681,17 @@ static void* nvLinearCombinationVectorArrayPt(void* thread_data)
   /*
    * X[0][j] = c[0] * X[0][j] + sum{ c[i] * X[i][j] }, i = 1,...,nvec-1
    */
-  if (my_data->ZZ1[0] == my_data->Y1)
-  {
-    for (j = 0; j < my_data->nvec; j++)
-    {
+  if (my_data->ZZ1[0] == my_data->Y1) {
+    for (j=0; j<my_data->nvec; j++) {
       zd = NV_DATA_PT(my_data->Y1[j]);
-      for (k = start; k < end; k++) { zd[k] *= c[0]; }
-      for (i = 1; i < my_data->nsum; i++)
-      {
+      for (k=start; k<end; k++) {
+        zd[k] *= c[0];
+      }
+      for (i=1; i<my_data->nsum; i++) {
         xd = NV_DATA_PT(my_data->ZZ1[i][j]);
-        for (k = start; k < end; k++) { zd[k] += c[i] * xd[k]; }
+        for (k=start; k<end; k++) {
+          zd[k] += c[i] * xd[k];
+        }
       }
     }
     pthread_exit(NULL);
@@ -3746,19 +3700,22 @@ static void* nvLinearCombinationVectorArrayPt(void* thread_data)
   /*
    * Z[j] = sum{ c[i] * X[i][j] }, i = 0,...,nvec-1
    */
-  for (j = 0; j < my_data->nvec; j++)
-  {
+  for (j=0; j<my_data->nvec; j++) {
     xd = NV_DATA_PT(my_data->ZZ1[0][j]);
     zd = NV_DATA_PT(my_data->Y1[j]);
-    for (k = start; k < end; k++) { zd[k] = c[0] * xd[k]; }
-    for (i = 1; i < my_data->nsum; i++)
-    {
+    for (k=start; k<end; k++) {
+      zd[k] = c[0] * xd[k];
+    }
+    for (i=1; i<my_data->nsum; i++) {
       xd = NV_DATA_PT(my_data->ZZ1[i][j]);
-      for (k = start; k < end; k++) { zd[k] += c[i] * xd[k]; }
+      for (k=start; k<end; k++) {
+        zd[k] += c[i] * xd[k];
+      }
     }
   }
   pthread_exit(NULL);
 }
+
 
 /*
  * -----------------------------------------------------------------
@@ -3766,83 +3723,86 @@ static void* nvLinearCombinationVectorArrayPt(void* thread_data)
  * -----------------------------------------------------------------
  */
 
+
+
 /* -----------------------------------------------------------------------------
  * Set buffer size
  */
 
-SUNErrCode N_VBufSize_Pthreads(N_Vector x, sunindextype* size)
+int N_VBufSize_Pthreads(N_Vector x, sunindextype *size)
 {
-  *size = NV_LENGTH_PT(x) * ((sunindextype)sizeof(sunrealtype));
-  return SUN_SUCCESS;
+  if (x == NULL) return(-1);
+  *size = NV_LENGTH_PT(x) * ((sunindextype)sizeof(realtype));
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pack butter
  */
 
-SUNErrCode N_VBufPack_Pthreads(N_Vector x, void* buf)
+int N_VBufPack_Pthreads(N_Vector x, void *buf)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
-  SUNAssert(buf, SUN_ERR_ARG_CORRUPT);
+  if (x == NULL || buf == NULL) return(-1);
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
-    thread_data[i].v2 = (sunrealtype*)buf;
+    thread_data[i].v2 = (realtype*)buf;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VBufPack_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VBufPack_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VBufPack
  */
 
-static void* VBufPack_PT(void* thread_data)
+
+static void *VBufPack_PT(void *thread_data)
 {
-  sunindextype i, start, end;
-  sunrealtype *xd, *bd;
-  Pthreads_Data* my_data;
+  sunindextype  i, start, end;
+  realtype      *xd, *bd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   bd = my_data->v2;
@@ -3851,79 +3811,80 @@ static void* VBufPack_PT(void* thread_data)
   end   = my_data->end;
 
   /* pack the buffer */
-  for (i = start; i < end; i++) { bd[i] = xd[i]; }
+  for (i = start; i < end; i++)
+    bd[i] = xd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* -----------------------------------------------------------------------------
  * Unpack butter
  */
 
-SUNErrCode N_VBufUnpack_Pthreads(N_Vector x, void* buf)
+int N_VBufUnpack_Pthreads(N_Vector x, void *buf)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
-  SUNAssert(buf, SUN_ERR_ARG_CORRUPT);
+  if (x == NULL || buf == NULL) return(-1);
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssert(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssert(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(x);
+  nthreads    = NV_NUM_THREADS_PT(x);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
-    thread_data[i].v2 = (sunrealtype*)buf;
+    thread_data[i].v2 = (realtype*)buf;
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VBufUnpack_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VBufUnpack_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
 
-  return SUN_SUCCESS;
+  return(0);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Pthread companion function to N_VBufUnpack
  */
 
-static void* VBufUnpack_PT(void* thread_data)
+
+static void *VBufUnpack_PT(void *thread_data)
 {
-  sunindextype i, start, end;
-  sunrealtype *xd, *bd;
-  Pthreads_Data* my_data;
+  sunindextype  i, start, end;
+  realtype      *xd, *bd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   bd = my_data->v2;
@@ -3932,11 +3893,13 @@ static void* VBufUnpack_PT(void* thread_data)
   end   = my_data->end;
 
   /* unpack the buffer */
-  for (i = start; i < end; i++) { xd[i] = bd[i]; }
+  for (i = start; i < end; i++)
+    xd[i] = bd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /*
  * -----------------------------------------------------------------
@@ -3944,50 +3907,48 @@ static void* VBufUnpack_PT(void* thread_data)
  * -----------------------------------------------------------------
  */
 
+
 /* ----------------------------------------------------------------------------
  * Copy vector components into second vector
  */
 
 static void VCopy_Pthreads(N_Vector x, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype      N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
     thread_data[i].v2 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VCopy_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VCopy_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -3997,18 +3958,19 @@ static void VCopy_Pthreads(N_Vector x, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to VCopy
  */
 
-static void* VCopy_PT(void* thread_data)
+static void *VCopy_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *zd;
-  Pthreads_Data* my_data;
+  realtype *xd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   zd = my_data->v2;
@@ -4017,11 +3979,13 @@ static void* VCopy_PT(void* thread_data)
   end   = my_data->end;
 
   /* copy vector components */
-  for (i = start; i < end; i++) { zd[i] = xd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = xd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Compute vector sum
@@ -4029,33 +3993,28 @@ static void* VCopy_PT(void* thread_data)
 
 static void VSum_Pthreads(N_Vector x, N_Vector y, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype      N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
@@ -4063,11 +4022,13 @@ static void VSum_Pthreads(N_Vector x, N_Vector y, N_Vector z)
     thread_data[i].v3 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VSum_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VSum_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -4077,18 +4038,19 @@ static void VSum_Pthreads(N_Vector x, N_Vector y, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to VSum
  */
 
-static void* VSum_PT(void* thread_data)
+static void *VSum_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *yd, *zd;
-  Pthreads_Data* my_data;
+  realtype *xd, *yd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   yd = my_data->v2;
@@ -4098,11 +4060,13 @@ static void* VSum_PT(void* thread_data)
   end   = my_data->end;
 
   /* compute vector sum */
-  for (i = start; i < end; i++) { zd[i] = xd[i] + yd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = xd[i] + yd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Compute vector difference
@@ -4110,33 +4074,28 @@ static void* VSum_PT(void* thread_data)
 
 static void VDiff_Pthreads(N_Vector x, N_Vector y, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype  N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
@@ -4144,11 +4103,13 @@ static void VDiff_Pthreads(N_Vector x, N_Vector y, N_Vector z)
     thread_data[i].v3 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VDiff_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VDiff_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -4158,18 +4119,19 @@ static void VDiff_Pthreads(N_Vector x, N_Vector y, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to VDiff
  */
 
-static void* VDiff_PT(void* thread_data)
+static void *VDiff_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *yd, *zd;
-  Pthreads_Data* my_data;
+  realtype *xd, *yd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   yd = my_data->v2;
@@ -4179,11 +4141,13 @@ static void* VDiff_PT(void* thread_data)
   end   = my_data->end;
 
   /* compute vector difference */
-  for (i = start; i < end; i++) { zd[i] = xd[i] - yd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = xd[i] - yd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Compute the negative of a vector
@@ -4191,44 +4155,41 @@ static void* VDiff_PT(void* thread_data)
 
 static void VNeg_Pthreads(N_Vector x, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype  N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].v1 = NV_DATA_PT(x);
     thread_data[i].v2 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VNeg_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VNeg_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -4238,18 +4199,19 @@ static void VNeg_Pthreads(N_Vector x, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to VNeg
  */
 
-static void* VNeg_PT(void* thread_data)
+static void *VNeg_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype *xd, *zd;
-  Pthreads_Data* my_data;
+  realtype *xd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   xd = my_data->v1;
   zd = my_data->v2;
@@ -4258,45 +4220,42 @@ static void* VNeg_PT(void* thread_data)
   end   = my_data->end;
 
   /* compute negative of vector */
-  for (i = start; i < end; i++) { zd[i] = -xd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = -xd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute scaled vector sum
  */
 
-static void VScaleSum_Pthreads(sunrealtype c, N_Vector x, N_Vector y, N_Vector z)
+static void VScaleSum_Pthreads(realtype c, N_Vector x, N_Vector y, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype  N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].c1 = c;
@@ -4305,11 +4264,13 @@ static void VScaleSum_Pthreads(sunrealtype c, N_Vector x, N_Vector y, N_Vector z
     thread_data[i].v3 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VScaleSum_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VScaleSum_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -4319,19 +4280,20 @@ static void VScaleSum_Pthreads(sunrealtype c, N_Vector x, N_Vector y, N_Vector z
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to VScaleSum
  */
 
-static void* VScaleSum_PT(void* thread_data)
+static void *VScaleSum_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype c;
-  sunrealtype *xd, *yd, *zd;
-  Pthreads_Data* my_data;
+  realtype c;
+  realtype *xd, *yd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   c  = my_data->c1;
   xd = my_data->v1;
@@ -4342,45 +4304,42 @@ static void* VScaleSum_PT(void* thread_data)
   end   = my_data->end;
 
   /* compute scaled vector sum */
-  for (i = start; i < end; i++) { zd[i] = c * (xd[i] + yd[i]); }
+  for (i = start; i < end; i++)
+    zd[i] = c*(xd[i] + yd[i]);
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute scaled vector difference
  */
 
-static void VScaleDiff_Pthreads(sunrealtype c, N_Vector x, N_Vector y, N_Vector z)
+static void VScaleDiff_Pthreads(realtype c, N_Vector x, N_Vector y, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype  N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].c1 = c;
@@ -4389,11 +4348,13 @@ static void VScaleDiff_Pthreads(sunrealtype c, N_Vector x, N_Vector y, N_Vector 
     thread_data[i].v3 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VScaleDiff_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VScaleDiff_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -4403,19 +4364,20 @@ static void VScaleDiff_Pthreads(sunrealtype c, N_Vector x, N_Vector y, N_Vector 
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to VScaleDiff
  */
 
-static void* VScaleDiff_PT(void* thread_data)
+static void *VScaleDiff_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype c;
-  sunrealtype *xd, *yd, *zd;
-  Pthreads_Data* my_data;
+  realtype c;
+  realtype *xd, *yd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   c  = my_data->c1;
   xd = my_data->v1;
@@ -4426,45 +4388,42 @@ static void* VScaleDiff_PT(void* thread_data)
   end   = my_data->end;
 
   /* compute scaled vector difference */
-  for (i = start; i < end; i++) { zd[i] = c * (xd[i] - yd[i]); }
+  for (i = start; i < end; i++)
+    zd[i] = c*(xd[i] - yd[i]);
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute vector sum z[i] = a*x[i]+y[i]
  */
 
-static void VLin1_Pthreads(sunrealtype a, N_Vector x, N_Vector y, N_Vector z)
+static void VLin1_Pthreads(realtype a, N_Vector x, N_Vector y, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype  N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].c1 = a;
@@ -4473,11 +4432,13 @@ static void VLin1_Pthreads(sunrealtype a, N_Vector x, N_Vector y, N_Vector z)
     thread_data[i].v3 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VLin1_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VLin1_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -4487,19 +4448,20 @@ static void VLin1_Pthreads(sunrealtype a, N_Vector x, N_Vector y, N_Vector z)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to VLin1
  */
 
-static void* VLin1_PT(void* thread_data)
+static void *VLin1_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype a;
-  sunrealtype *xd, *yd, *zd;
-  Pthreads_Data* my_data;
+  realtype a;
+  realtype *xd, *yd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   a  = my_data->c1;
   xd = my_data->v1;
@@ -4510,45 +4472,42 @@ static void* VLin1_PT(void* thread_data)
   end   = my_data->end;
 
   /* compute vector sum */
-  for (i = start; i < end; i++) { zd[i] = (a * xd[i]) + yd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = (a*xd[i]) + yd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute vector difference z[i] = a*x[i]-y[i]
  */
 
-static void VLin2_Pthreads(sunrealtype a, N_Vector x, N_Vector y, N_Vector z)
+static void VLin2_Pthreads(realtype a, N_Vector x, N_Vector y, N_Vector z)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype  N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].c1 = a;
@@ -4557,11 +4516,13 @@ static void VLin2_Pthreads(sunrealtype a, N_Vector x, N_Vector y, N_Vector z)
     thread_data[i].v3 = NV_DATA_PT(z);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VLin2_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VLin2_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -4575,15 +4536,15 @@ static void VLin2_Pthreads(sunrealtype a, N_Vector x, N_Vector y, N_Vector z)
  * Pthread companion function to VLin2
  */
 
-static void* VLin2_PT(void* thread_data)
+static void *VLin2_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype a;
-  sunrealtype *xd, *yd, *zd;
-  Pthreads_Data* my_data;
+  realtype a;
+  realtype *xd, *yd, *zd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   a  = my_data->c1;
   xd = my_data->v1;
@@ -4594,45 +4555,42 @@ static void* VLin2_PT(void* thread_data)
   end   = my_data->end;
 
   /* compute vector difference */
-  for (i = start; i < end; i++) { zd[i] = (a * xd[i]) - yd[i]; }
+  for (i = start; i < end; i++)
+    zd[i] = (a*xd[i]) - yd[i];
 
   /* exit */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute special cases of linear sum
  */
 
-static void Vaxpy_Pthreads(sunrealtype a, N_Vector x, N_Vector y)
+static void Vaxpy_Pthreads(realtype a, N_Vector x, N_Vector y)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype  N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].c1 = a;
@@ -4640,11 +4598,13 @@ static void Vaxpy_Pthreads(sunrealtype a, N_Vector x, N_Vector y)
     thread_data[i].v2 = NV_DATA_PT(y);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, Vaxpy_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, Vaxpy_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -4658,15 +4618,15 @@ static void Vaxpy_Pthreads(sunrealtype a, N_Vector x, N_Vector y)
  * Pthread companion function to Vaxpy
  */
 
-static void* Vaxpy_PT(void* thread_data)
+static void *Vaxpy_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype a;
-  sunrealtype *xd, *yd;
-  Pthreads_Data* my_data;
+  realtype a;
+  realtype *xd, *yd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   a  = my_data->c1;
   xd = my_data->v1;
@@ -4676,72 +4636,71 @@ static void* Vaxpy_PT(void* thread_data)
   end   = my_data->end;
 
   /* compute axpy */
-  if (a == ONE)
-  {
-    for (i = start; i < end; i++) { yd[i] += xd[i]; }
+  if (a == ONE) {
+    for (i = start; i < end; i++)
+      yd[i] += xd[i];
 
     /* exit */
     pthread_exit(NULL);
   }
 
-  if (a == -ONE)
-  {
-    for (i = start; i < end; i++) { yd[i] -= xd[i]; }
+  if (a == -ONE) {
+    for (i = start; i < end; i++)
+      yd[i] -= xd[i];
 
     /* exit */
     pthread_exit(NULL);
   }
 
-  for (i = start; i < end; i++) { yd[i] += a * xd[i]; }
+  for (i = start; i < end; i++)
+    yd[i] += a*xd[i];
 
   /* return */
   pthread_exit(NULL);
 }
 
+
 /* ----------------------------------------------------------------------------
  * Compute scaled vector
  */
 
-static void VScaleBy_Pthreads(sunrealtype a, N_Vector x)
+static void VScaleBy_Pthreads(realtype a, N_Vector x)
 {
-  SUNFunctionBegin(x->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype  N;
+  int           i, nthreads;
+  pthread_t     *threads;
+  Pthreads_Data *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(x);
-  nthreads = NV_NUM_THREADS_PT(x);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(x);
+  nthreads     = NV_NUM_THREADS_PT(x);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-  for (i = 0; i < nthreads; i++)
-  {
+  for (i=0; i<nthreads; i++) {
     /* initialize thread data */
-    nvInitThreadData(&thread_data[i]);
+    N_VInitThreadData(&thread_data[i]);
 
     /* compute start and end loop index for thread */
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
     /* pack thread data */
     thread_data[i].c1 = a;
     thread_data[i].v1 = NV_DATA_PT(x);
 
     /* create threads and call pthread companion function */
-    pthread_create(&threads[i], &attr, VScaleBy_PT, (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VScaleBy_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
@@ -4751,19 +4710,20 @@ static void VScaleBy_Pthreads(sunrealtype a, N_Vector x)
   return;
 }
 
+
 /* ----------------------------------------------------------------------------
  * Pthread companion function to VScaleBy
  */
 
-static void* VScaleBy_PT(void* thread_data)
+static void *VScaleBy_PT(void *thread_data)
 {
   sunindextype i, start, end;
-  sunrealtype a;
-  sunrealtype* xd;
-  Pthreads_Data* my_data;
+  realtype a;
+  realtype *xd;
+  Pthreads_Data *my_data;
 
   /* extract thread data */
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
 
   a  = my_data->c1;
   xd = my_data->v1;
@@ -4772,11 +4732,13 @@ static void* VScaleBy_PT(void* thread_data)
   end   = my_data->end;
 
   /* compute scaled vector */
-  for (i = start; i < end; i++) { xd[i] *= a; }
+  for (i = start; i < end; i++)
+    xd[i] *= a;
 
   /* exit */
   pthread_exit(NULL);
 }
+
 
 /*
  * -----------------------------------------------------------------------------
@@ -4784,179 +4746,167 @@ static void* VScaleBy_PT(void* thread_data)
  * -----------------------------------------------------------------------------
  */
 
-static void VSumVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* Y,
-                                     N_Vector* Z)
+static int VSumVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* Y, N_Vector* Z)
 {
-  SUNFunctionBegin(X[0]->sunctx);
-
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(X[0]);
+  nthreads    = NV_NUM_THREADS_PT(X[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
   /* pack thread data, distribute loop indices, and create threads/call kernel */
-  for (i = 0; i < nthreads; i++)
-  {
-    nvInitThreadData(&thread_data[i]);
+  for (i=0; i<nthreads; i++) {
+    N_VInitThreadData(&thread_data[i]);
 
     thread_data[i].nvec = nvec;
     thread_data[i].Y1   = X;
     thread_data[i].Y2   = Y;
     thread_data[i].Y3   = Z;
 
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
-    pthread_create(&threads[i], &attr, VSumVectorArray_PT,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VSumVectorArray_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++)
+    pthread_join(threads[i], NULL);
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
+
+  return(0);
 }
 
-static void* VSumVectorArray_PT(void* thread_data)
+static void *VSumVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
+  realtype* zd=NULL;
 
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
   start   = my_data->start;
   end     = my_data->end;
 
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
     yd = NV_DATA_PT(my_data->Y2[i]);
     zd = NV_DATA_PT(my_data->Y3[i]);
-    for (j = start; j < end; j++) { zd[j] = xd[j] + yd[j]; }
+    for (j=start; j<end; j++)
+      zd[j] = xd[j] + yd[j];
   }
 
   pthread_exit(NULL);
 }
 
-static void VDiffVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* Y,
-                                      N_Vector* Z)
-{
-  SUNFunctionBegin(X[0]->sunctx);
 
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+static int VDiffVectorArray_Pthreads(int nvec, N_Vector* X, N_Vector* Y, N_Vector* Z)
+{
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(X[0]);
+  nthreads    = NV_NUM_THREADS_PT(X[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
   /* pack thread data, distribute loop indices, and create threads/call kernel */
-  for (i = 0; i < nthreads; i++)
-  {
-    nvInitThreadData(&thread_data[i]);
+  for (i=0; i<nthreads; i++) {
+    N_VInitThreadData(&thread_data[i]);
 
     thread_data[i].nvec = nvec;
     thread_data[i].Y1   = X;
     thread_data[i].Y2   = Y;
     thread_data[i].Y3   = Z;
 
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
-    pthread_create(&threads[i], &attr, VDiffVectorArray_PT,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VDiffVectorArray_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++)
+    pthread_join(threads[i], NULL);
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
+
+  return(0);
 }
 
-static void* VDiffVectorArray_PT(void* thread_data)
+static void *VDiffVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
+  realtype* zd=NULL;
 
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
   start   = my_data->start;
   end     = my_data->end;
 
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
     yd = NV_DATA_PT(my_data->Y2[i]);
     zd = NV_DATA_PT(my_data->Y3[i]);
-    for (j = start; j < end; j++) { zd[j] = xd[j] - yd[j]; }
+    for (j=start; j<end; j++)
+      zd[j] = xd[j] - yd[j];
   }
 
   pthread_exit(NULL);
 }
 
-static void VScaleSumVectorArray_Pthreads(int nvec, sunrealtype c, N_Vector* X,
-                                          N_Vector* Y, N_Vector* Z)
-{
-  SUNFunctionBegin(X[0]->sunctx);
 
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+static int VScaleSumVectorArray_Pthreads(int nvec, realtype c, N_Vector* X, N_Vector* Y, N_Vector* Z)
+{
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N            = NV_LENGTH_PT(X[0]);
+  nthreads     = NV_NUM_THREADS_PT(X[0]);
+  threads      = malloc(nthreads*sizeof(pthread_t));
+  thread_data  = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
   /* pack thread data, distribute loop indices, and create threads/call kernel */
-  for (i = 0; i < nthreads; i++)
-  {
-    nvInitThreadData(&thread_data[i]);
+  for (i=0; i<nthreads; i++) {
+    N_VInitThreadData(&thread_data[i]);
 
     thread_data[i].nvec = nvec;
     thread_data[i].c1   = c;
@@ -4964,75 +4914,72 @@ static void VScaleSumVectorArray_Pthreads(int nvec, sunrealtype c, N_Vector* X,
     thread_data[i].Y2   = Y;
     thread_data[i].Y3   = Z;
 
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
-    pthread_create(&threads[i], &attr, VScaleSumVectorArray_PT,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VScaleSumVectorArray_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++)
+    pthread_join(threads[i], NULL);
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
+
+  return(0);
 }
 
-static void* VScaleSumVectorArray_PT(void* thread_data)
+static void *VScaleSumVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype c;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype  c;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
+  realtype* zd=NULL;
 
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
   start   = my_data->start;
   end     = my_data->end;
   c       = my_data->c1;
 
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
     yd = NV_DATA_PT(my_data->Y2[i]);
     zd = NV_DATA_PT(my_data->Y3[i]);
-    for (j = start; j < end; j++) { zd[j] = c * (xd[j] + yd[j]); }
+    for (j=start; j<end; j++)
+      zd[j] = c * (xd[j] + yd[j]);
   }
 
   pthread_exit(NULL);
 }
 
-static void VScaleDiffVectorArray_Pthreads(int nvec, sunrealtype c, N_Vector* X,
-                                           N_Vector* Y, N_Vector* Z)
-{
-  SUNFunctionBegin(X[0]->sunctx);
 
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+static int VScaleDiffVectorArray_Pthreads(int nvec, realtype c, N_Vector* X, N_Vector* Y, N_Vector* Z)
+{
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(X[0]);
+  nthreads    = NV_NUM_THREADS_PT(X[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
   /* pack thread data, distribute loop indices, and create threads/call kernel */
-  for (i = 0; i < nthreads; i++)
-  {
-    nvInitThreadData(&thread_data[i]);
+  for (i=0; i<nthreads; i++) {
+    N_VInitThreadData(&thread_data[i]);
 
     thread_data[i].nvec = nvec;
     thread_data[i].c1   = c;
@@ -5040,75 +4987,72 @@ static void VScaleDiffVectorArray_Pthreads(int nvec, sunrealtype c, N_Vector* X,
     thread_data[i].Y2   = Y;
     thread_data[i].Y3   = Z;
 
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
-    pthread_create(&threads[i], &attr, VScaleDiffVectorArray_PT,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VScaleDiffVectorArray_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++)
+    pthread_join(threads[i], NULL);
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
+
+  return(0);
 }
 
-static void* VScaleDiffVectorArray_PT(void* thread_data)
+static void *VScaleDiffVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype c;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype  c;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
+  realtype* zd=NULL;
 
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
   start   = my_data->start;
   end     = my_data->end;
   c       = my_data->c1;
 
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
     yd = NV_DATA_PT(my_data->Y2[i]);
     zd = NV_DATA_PT(my_data->Y3[i]);
-    for (j = start; j < end; j++) { zd[j] = c * (xd[j] - yd[j]); }
+    for (j=start; j<end; j++)
+      zd[j] = c * (xd[j] - yd[j]);
   }
 
   pthread_exit(NULL);
 }
 
-static void VLin1VectorArray_Pthreads(int nvec, sunrealtype a, N_Vector* X,
-                                      N_Vector* Y, N_Vector* Z)
-{
-  SUNFunctionBegin(X[0]->sunctx);
 
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+static int VLin1VectorArray_Pthreads(int nvec, realtype a, N_Vector* X, N_Vector* Y, N_Vector* Z)
+{
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(X[0]);
+  nthreads    = NV_NUM_THREADS_PT(X[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
   /* pack thread data, distribute loop indices, and create threads/call kernel */
-  for (i = 0; i < nthreads; i++)
-  {
-    nvInitThreadData(&thread_data[i]);
+  for (i=0; i<nthreads; i++) {
+    N_VInitThreadData(&thread_data[i]);
 
     thread_data[i].nvec = nvec;
     thread_data[i].c1   = a;
@@ -5116,75 +5060,72 @@ static void VLin1VectorArray_Pthreads(int nvec, sunrealtype a, N_Vector* X,
     thread_data[i].Y2   = Y;
     thread_data[i].Y3   = Z;
 
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
-    pthread_create(&threads[i], &attr, VLin1VectorArray_PT,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VLin1VectorArray_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++)
+    pthread_join(threads[i], NULL);
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
+
+  return(0);
 }
 
-static void* VLin1VectorArray_PT(void* thread_data)
+static void *VLin1VectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype a;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype  a;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
+  realtype* zd=NULL;
 
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
   start   = my_data->start;
   end     = my_data->end;
   a       = my_data->c1;
 
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
     yd = NV_DATA_PT(my_data->Y2[i]);
     zd = NV_DATA_PT(my_data->Y3[i]);
-    for (j = start; j < end; j++) { zd[j] = (a * xd[j]) + yd[j]; }
+    for (j=start; j<end; j++)
+      zd[j] = (a * xd[j]) + yd[j];
   }
 
   pthread_exit(NULL);
 }
 
-static void VLin2VectorArray_Pthreads(int nvec, sunrealtype a, N_Vector* X,
-                                      N_Vector* Y, N_Vector* Z)
-{
-  SUNFunctionBegin(X[0]->sunctx);
 
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+static int VLin2VectorArray_Pthreads(int nvec, realtype a, N_Vector* X, N_Vector* Y, N_Vector* Z)
+{
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(X[0]);
+  nthreads    = NV_NUM_THREADS_PT(X[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
   /* pack thread data, distribute loop indices, and create threads/call kernel */
-  for (i = 0; i < nthreads; i++)
-  {
-    nvInitThreadData(&thread_data[i]);
+  for (i=0; i<nthreads; i++) {
+    N_VInitThreadData(&thread_data[i]);
 
     thread_data[i].nvec = nvec;
     thread_data[i].c1   = a;
@@ -5192,141 +5133,139 @@ static void VLin2VectorArray_Pthreads(int nvec, sunrealtype a, N_Vector* X,
     thread_data[i].Y2   = Y;
     thread_data[i].Y3   = Z;
 
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
-    pthread_create(&threads[i], &attr, VLin2VectorArray_PT,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VLin2VectorArray_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++)
+    pthread_join(threads[i], NULL);
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
+
+  return(0);
 }
 
-static void* VLin2VectorArray_PT(void* thread_data)
+static void *VLin2VectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype a;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
-  sunrealtype* zd = NULL;
+  int       i;
+  realtype  a;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
+  realtype* zd=NULL;
 
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
   start   = my_data->start;
   end     = my_data->end;
   a       = my_data->c1;
 
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
     yd = NV_DATA_PT(my_data->Y2[i]);
     zd = NV_DATA_PT(my_data->Y3[i]);
-    for (j = start; j < end; j++) { zd[j] = (a * xd[j]) - yd[j]; }
+    for (j=start; j<end; j++)
+      zd[j] = (a * xd[j]) - yd[j];
   }
 
   pthread_exit(NULL);
 }
 
-static void VaxpyVectorArray_Pthreads(int nvec, sunrealtype a, N_Vector* X,
-                                      N_Vector* Y)
-{
-  SUNFunctionBegin(X[0]->sunctx);
 
-  sunindextype N;
-  int i, nthreads;
-  pthread_t* threads;
-  Pthreads_Data* thread_data;
+static int VaxpyVectorArray_Pthreads(int nvec, realtype a, N_Vector* X, N_Vector* Y)
+{
+  sunindextype   N;
+  int            i, nthreads;
+  pthread_t      *threads;
+  Pthreads_Data  *thread_data;
   pthread_attr_t attr;
 
   /* allocate threads and thread data structs */
-  N        = NV_LENGTH_PT(X[0]);
-  nthreads = NV_NUM_THREADS_PT(X[0]);
-  threads  = malloc(nthreads * sizeof(pthread_t));
-  SUNAssertVoid(threads, SUN_ERR_MALLOC_FAIL);
-  thread_data = (Pthreads_Data*)malloc(nthreads * sizeof(struct _Pthreads_Data));
-  SUNAssertVoid(thread_data, SUN_ERR_MALLOC_FAIL);
+  N           = NV_LENGTH_PT(X[0]);
+  nthreads    = NV_NUM_THREADS_PT(X[0]);
+  threads     = malloc(nthreads*sizeof(pthread_t));
+  thread_data = (Pthreads_Data *) malloc(nthreads*sizeof(struct _Pthreads_Data));
 
   /* set thread attributes */
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
   /* pack thread data, distribute loop indices, and create threads/call kernel */
-  for (i = 0; i < nthreads; i++)
-  {
-    nvInitThreadData(&thread_data[i]);
+  for (i=0; i<nthreads; i++) {
+    N_VInitThreadData(&thread_data[i]);
 
     thread_data[i].nvec = nvec;
     thread_data[i].c1   = a;
     thread_data[i].Y1   = X;
     thread_data[i].Y2   = Y;
 
-    nvSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
+    N_VSplitLoop(i, &nthreads, &N, &thread_data[i].start, &thread_data[i].end);
 
-    pthread_create(&threads[i], &attr, VaxpyVectorArray_PT,
-                   (void*)&thread_data[i]);
+    pthread_create(&threads[i], &attr, VaxpyVectorArray_PT, (void *) &thread_data[i]);
   }
 
   /* wait for all threads to finish */
-  for (i = 0; i < nthreads; i++) { pthread_join(threads[i], NULL); }
+  for (i=0; i<nthreads; i++)
+    pthread_join(threads[i], NULL);
 
   /* clean up and return */
   pthread_attr_destroy(&attr);
   free(threads);
   free(thread_data);
+
+  return(0);
 }
 
-static void* VaxpyVectorArray_PT(void* thread_data)
+static void *VaxpyVectorArray_PT(void *thread_data)
 {
-  Pthreads_Data* my_data;
-  sunindextype j, start, end;
+  Pthreads_Data *my_data;
+  sunindextype  j, start, end;
 
-  int i;
-  sunrealtype a;
-  sunrealtype* xd = NULL;
-  sunrealtype* yd = NULL;
+  int       i;
+  realtype  a;
+  realtype* xd=NULL;
+  realtype* yd=NULL;
 
-  my_data = (Pthreads_Data*)thread_data;
+  my_data = (Pthreads_Data *) thread_data;
   start   = my_data->start;
   end     = my_data->end;
   a       = my_data->c1;
 
-  if (a == ONE)
-  {
-    for (i = 0; i < my_data->nvec; i++)
-    {
+  if (a == ONE) {
+    for (i=0; i<my_data->nvec; i++) {
       xd = NV_DATA_PT(my_data->Y1[i]);
       yd = NV_DATA_PT(my_data->Y2[i]);
-      for (j = start; j < end; j++) { yd[j] += xd[j]; }
+      for (j=start; j<end; j++)
+        yd[j] += xd[j];
     }
     pthread_exit(NULL);
   }
 
-  if (a == -ONE)
-  {
-    for (i = 0; i < my_data->nvec; i++)
-    {
+  if (a == -ONE) {
+    for (i=0; i<my_data->nvec; i++) {
       xd = NV_DATA_PT(my_data->Y1[i]);
       yd = NV_DATA_PT(my_data->Y2[i]);
-      for (j = start; j < end; j++) { yd[j] -= xd[j]; }
+      for (j=start; j<end; j++)
+        yd[j] -= xd[j];
     }
     pthread_exit(NULL);
   }
 
-  for (i = 0; i < my_data->nvec; i++)
-  {
+  for (i=0; i<my_data->nvec; i++) {
     xd = NV_DATA_PT(my_data->Y1[i]);
     yd = NV_DATA_PT(my_data->Y2[i]);
-    for (j = start; j < end; j++) { yd[j] += a * xd[j]; }
+    for (j=start; j<end; j++)
+      yd[j] += a * xd[j];
   }
   pthread_exit(NULL);
 }
+
 
 /*
  * -----------------------------------------------------------------
@@ -5338,8 +5277,8 @@ static void* VaxpyVectorArray_PT(void* thread_data)
  * Determine loop indices for a thread
  */
 
-static void nvSplitLoop(int myid, int* nthreads, sunindextype* N,
-                        sunindextype* start, sunindextype* end)
+static void N_VSplitLoop(int myid, int *nthreads, sunindextype *N,
+			 sunindextype *start, sunindextype *end)
 {
   sunindextype q, r; /* quotient and remainder */
 
@@ -5348,28 +5287,26 @@ static void nvSplitLoop(int myid, int* nthreads, sunindextype* N,
   r = *N % *nthreads;
 
   /* assign work */
-  if (myid < r)
-  {
+  if (myid < r) {
     *start = myid * q + myid;
     *end   = *start + q + 1;
-  }
-  else
-  {
+  } else {
     *start = myid * q + r;
     *end   = *start + q;
   }
 }
 
+
 /* ----------------------------------------------------------------------------
  * Initialize values of local thread data struct
  */
 
-static void nvInitThreadData(Pthreads_Data* thread_data)
+static void N_VInitThreadData(Pthreads_Data *thread_data)
 {
   thread_data->start = -1;
   thread_data->end   = -1;
 
-#ifdef NAN
+#if __STDC_VERSION__ >= 199901L
   thread_data->c1 = NAN;
   thread_data->c2 = NAN;
 #else
@@ -5377,19 +5314,20 @@ static void nvInitThreadData(Pthreads_Data* thread_data)
   thread_data->c2 = ZERO;
 #endif
 
-  thread_data->v1           = NULL;
-  thread_data->v2           = NULL;
-  thread_data->v3           = NULL;
-  thread_data->global_val   = NULL;
+  thread_data->v1 = NULL;
+  thread_data->v2 = NULL;
+  thread_data->v3 = NULL;
+  thread_data->global_val = NULL;
   thread_data->global_mutex = NULL;
 
-  thread_data->nvec  = ZERO;
-  thread_data->nsum  = ZERO;
+  thread_data->nvec = ZERO;
+  thread_data->nsum = ZERO;
   thread_data->cvals = NULL;
-  thread_data->Y1    = NULL;
-  thread_data->Y2    = NULL;
-  thread_data->Y3    = NULL;
+  thread_data->Y1 = NULL;
+  thread_data->Y2 = NULL;
+  thread_data->Y3 = NULL;
 }
+
 
 /*
  * -----------------------------------------------------------------
@@ -5397,28 +5335,28 @@ static void nvInitThreadData(Pthreads_Data* thread_data)
  * -----------------------------------------------------------------
  */
 
-SUNErrCode N_VEnableFusedOps_Pthreads(N_Vector v, sunbooleantype tf)
+int N_VEnableFusedOps_Pthreads(N_Vector v, booleantype tf)
 {
-  if (tf)
-  {
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  if (tf) {
     /* enable all fused vector operations */
     v->ops->nvlinearcombination = N_VLinearCombination_Pthreads;
     v->ops->nvscaleaddmulti     = N_VScaleAddMulti_Pthreads;
     v->ops->nvdotprodmulti      = N_VDotProdMulti_Pthreads;
     /* enable all vector array operations */
-    v->ops->nvlinearsumvectorarray     = N_VLinearSumVectorArray_Pthreads;
-    v->ops->nvscalevectorarray         = N_VScaleVectorArray_Pthreads;
-    v->ops->nvconstvectorarray         = N_VConstVectorArray_Pthreads;
-    v->ops->nvwrmsnormvectorarray      = N_VWrmsNormVectorArray_Pthreads;
-    v->ops->nvwrmsnormmaskvectorarray  = N_VWrmsNormMaskVectorArray_Pthreads;
-    v->ops->nvscaleaddmultivectorarray = N_VScaleAddMultiVectorArray_Pthreads;
-    v->ops->nvlinearcombinationvectorarray =
-      N_VLinearCombinationVectorArray_Pthreads;
-    /* enable single buffer reduction operations */
-    v->ops->nvdotprodmultilocal = N_VDotProdMulti_Pthreads;
-  }
-  else
-  {
+    v->ops->nvlinearsumvectorarray         = N_VLinearSumVectorArray_Pthreads;
+    v->ops->nvscalevectorarray             = N_VScaleVectorArray_Pthreads;
+    v->ops->nvconstvectorarray             = N_VConstVectorArray_Pthreads;
+    v->ops->nvwrmsnormvectorarray          = N_VWrmsNormVectorArray_Pthreads;
+    v->ops->nvwrmsnormmaskvectorarray      = N_VWrmsNormMaskVectorArray_Pthreads;
+    v->ops->nvscaleaddmultivectorarray     = N_VScaleAddMultiVectorArray_Pthreads;
+    v->ops->nvlinearcombinationvectorarray = N_VLinearCombinationVectorArray_Pthreads;
+  } else {
     /* disable all fused vector operations */
     v->ops->nvlinearcombination = NULL;
     v->ops->nvscaleaddmulti     = NULL;
@@ -5431,76 +5369,189 @@ SUNErrCode N_VEnableFusedOps_Pthreads(N_Vector v, sunbooleantype tf)
     v->ops->nvwrmsnormmaskvectorarray      = NULL;
     v->ops->nvscaleaddmultivectorarray     = NULL;
     v->ops->nvlinearcombinationvectorarray = NULL;
-    /* enable single buffer reduction operations */
-    v->ops->nvdotprodmultilocal = NULL;
   }
 
   /* return success */
-  return SUN_SUCCESS;
+  return(0);
 }
 
-SUNErrCode N_VEnableLinearCombination_Pthreads(N_Vector v, sunbooleantype tf)
+
+int N_VEnableLinearCombination_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvlinearcombination = tf ? N_VLinearCombination_Pthreads : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvlinearcombination = N_VLinearCombination_Pthreads;
+  else
+    v->ops->nvlinearcombination = NULL;
+
+  /* return success */
+  return(0);
 }
 
-SUNErrCode N_VEnableScaleAddMulti_Pthreads(N_Vector v, sunbooleantype tf)
+int N_VEnableScaleAddMulti_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvscaleaddmulti = tf ? N_VScaleAddMulti_Pthreads : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvscaleaddmulti = N_VScaleAddMulti_Pthreads;
+  else
+    v->ops->nvscaleaddmulti = NULL;
+
+  /* return success */
+  return(0);
 }
 
-SUNErrCode N_VEnableDotProdMulti_Pthreads(N_Vector v, sunbooleantype tf)
+int N_VEnableDotProdMulti_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvdotprodmulti      = tf ? N_VDotProdMulti_Pthreads : NULL;
-  v->ops->nvdotprodmultilocal = tf ? N_VDotProdMulti_Pthreads : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvdotprodmulti = N_VDotProdMulti_Pthreads;
+  else
+    v->ops->nvdotprodmulti = NULL;
+
+  /* return success */
+  return(0);
 }
 
-SUNErrCode N_VEnableLinearSumVectorArray_Pthreads(N_Vector v, sunbooleantype tf)
+int N_VEnableLinearSumVectorArray_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvlinearsumvectorarray = tf ? N_VLinearSumVectorArray_Pthreads : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvlinearsumvectorarray = N_VLinearSumVectorArray_Pthreads;
+  else
+    v->ops->nvlinearsumvectorarray = NULL;
+
+  /* return success */
+  return(0);
 }
 
-SUNErrCode N_VEnableScaleVectorArray_Pthreads(N_Vector v, sunbooleantype tf)
+int N_VEnableScaleVectorArray_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvscalevectorarray = tf ? N_VScaleVectorArray_Pthreads : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvscalevectorarray = N_VScaleVectorArray_Pthreads;
+  else
+    v->ops->nvscalevectorarray = NULL;
+
+  /* return success */
+  return(0);
 }
 
-SUNErrCode N_VEnableConstVectorArray_Pthreads(N_Vector v, sunbooleantype tf)
+int N_VEnableConstVectorArray_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvconstvectorarray = tf ? N_VConstVectorArray_Pthreads : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvconstvectorarray = N_VConstVectorArray_Pthreads;
+  else
+    v->ops->nvconstvectorarray = NULL;
+
+  /* return success */
+  return(0);
 }
 
-SUNErrCode N_VEnableWrmsNormVectorArray_Pthreads(N_Vector v, sunbooleantype tf)
+int N_VEnableWrmsNormVectorArray_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvwrmsnormvectorarray = tf ? N_VWrmsNormVectorArray_Pthreads : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvwrmsnormvectorarray = N_VWrmsNormVectorArray_Pthreads;
+  else
+    v->ops->nvwrmsnormvectorarray = NULL;
+
+  /* return success */
+  return(0);
 }
 
-SUNErrCode N_VEnableWrmsNormMaskVectorArray_Pthreads(N_Vector v, sunbooleantype tf)
+int N_VEnableWrmsNormMaskVectorArray_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvwrmsnormmaskvectorarray = tf ? N_VWrmsNormMaskVectorArray_Pthreads
-                                         : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvwrmsnormmaskvectorarray = N_VWrmsNormMaskVectorArray_Pthreads;
+  else
+    v->ops->nvwrmsnormmaskvectorarray = NULL;
+
+  /* return success */
+  return(0);
 }
 
-SUNErrCode N_VEnableScaleAddMultiVectorArray_Pthreads(N_Vector v,
-                                                      sunbooleantype tf)
+int N_VEnableScaleAddMultiVectorArray_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvscaleaddmultivectorarray = tf ? N_VScaleAddMultiVectorArray_Pthreads
-                                          : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvscaleaddmultivectorarray = N_VScaleAddMultiVectorArray_Pthreads;
+  else
+    v->ops->nvscaleaddmultivectorarray = NULL;
+
+  /* return success */
+  return(0);
 }
 
-SUNErrCode N_VEnableLinearCombinationVectorArray_Pthreads(N_Vector v,
-                                                          sunbooleantype tf)
+int N_VEnableLinearCombinationVectorArray_Pthreads(N_Vector v, booleantype tf)
 {
-  v->ops->nvlinearcombinationvectorarray =
-    tf ? N_VLinearCombinationVectorArray_Pthreads : NULL;
-  return SUN_SUCCESS;
+  /* check that vector is non-NULL */
+  if (v == NULL) return(-1);
+
+  /* check that ops structure is non-NULL */
+  if (v->ops == NULL) return(-1);
+
+  /* enable/disable operation */
+  if (tf)
+    v->ops->nvlinearcombinationvectorarray = N_VLinearCombinationVectorArray_Pthreads;
+  else
+    v->ops->nvlinearcombinationvectorarray = NULL;
+
+  /* return success */
+  return(0);
 }

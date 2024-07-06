@@ -2,7 +2,7 @@
  * Programmer(s): David J. Gardner @ LLNL
  * ---------------------------------------------------------------------------
  * SUNDIALS Copyright Start
- * Copyright (c) 2002-2024, Lawrence Livermore National Security
+ * Copyright (c) 2002-2021, Lawrence Livermore National Security
  * and Southern Methodist University.
  * All rights reserved.
  *
@@ -19,33 +19,33 @@
 #define _SUNMATRIX_ONEMKLDENSE_H
 
 #include <stdio.h>
+#include <CL/sycl.hpp>
+
 #include <sundials/sundials_matrix.h>
 #include <sundials/sundials_memory.h>
 #include <sundials/sundials_sycl_policies.hpp>
-#include <sycl/sycl.hpp>
 
-#ifdef __cplusplus /* wrapper to enable C++ usage */
+#ifdef __cplusplus  /* wrapper to enable C++ usage */
 extern "C" {
 #endif
 
-struct _SUNMatrixContent_OneMklDense
-{
-  int last_flag;                  /* last error code returned       */
-  sunindextype block_rows;        /* number of rows in a block      */
-  sunindextype block_cols;        /* number of columns in a block   */
-  sunindextype num_blocks;        /* number of blocks in the matrix */
-  sunindextype rows;              /* total number of rows           */
-  sunindextype cols;              /* total number of columns        */
-  sunindextype ldata;             /* length of data array           */
-  SUNMemory data;                 /* matrix data; column-major      */
-  SUNMemory blocks;               /* device pointers to blocks of A */
-  SUNSyclExecPolicy* exec_policy; /* execution policy               */
-  SUNMemoryType mem_type;         /* memory type                    */
-  SUNMemoryHelper mem_helper;     /* memory helper                  */
-  ::sycl::queue* queue;           /* operation queue                */
+struct _SUNMatrixContent_OneMklDense {
+  int                last_flag;    /* last error code returned       */
+  sunindextype       block_rows;   /* number of rows in a block      */
+  sunindextype       block_cols;   /* number of columns in a block   */
+  sunindextype       num_blocks;   /* number of blocks in the matrix */
+  sunindextype       rows;         /* total number of rows           */
+  sunindextype       cols;         /* total number of columns        */
+  sunindextype       ldata;        /* length of data array           */
+  SUNMemory          data;         /* matrix data; column-major      */
+  SUNMemory          blocks;       /* device pointers to blocks of A */
+  SUNSyclExecPolicy* exec_policy;  /* execution policy               */
+  SUNMemoryType      mem_type;     /* memory type                    */
+  SUNMemoryHelper    mem_helper;   /* memory helper                  */
+  sycl::queue*       queue;        /* operation queue                */
 };
 
-typedef struct _SUNMatrixContent_OneMklDense* SUNMatrixContent_OneMklDense;
+typedef struct _SUNMatrixContent_OneMklDense *SUNMatrixContent_OneMklDense;
 
 /* ---------------------------------------------------------------------------
  * Implementation specific functions
@@ -57,14 +57,14 @@ SUNDIALS_EXPORT
 SUNMatrix SUNMatrix_OneMklDense(sunindextype M, sunindextype N,
                                 SUNMemoryType mem_type,
                                 SUNMemoryHelper mem_helper,
-                                ::sycl::queue* queue, SUNContext sunctx);
+                                sycl::queue* queue);
 
 SUNDIALS_EXPORT
-SUNMatrix SUNMatrix_OneMklDenseBlock(sunindextype num_blocks,
-                                     sunindextype M_block, sunindextype N_block,
+SUNMatrix SUNMatrix_OneMklDenseBlock(sunindextype num_blocks, sunindextype M_block,
+                                     sunindextype N_block,
                                      SUNMemoryType mem_type,
                                      SUNMemoryHelper mem_helper,
-                                     ::sycl::queue* queue, SUNContext sunctx);
+                                     sycl::queue* queue);
 
 /* Get matrix dimensions */
 
@@ -91,13 +91,13 @@ SUNDIALS_EXPORT
 sunindextype SUNMatrix_OneMklDense_LData(SUNMatrix A);
 
 SUNDIALS_EXPORT
-sunrealtype* SUNMatrix_OneMklDense_Data(SUNMatrix A);
+realtype* SUNMatrix_OneMklDense_Data(SUNMatrix A);
 
-static inline sunrealtype* SUNMatrix_OneMklDense_Column(SUNMatrix Amat,
-                                                        sunindextype j)
+SUNDIALS_STATIC_INLINE
+realtype* SUNMatrix_OneMklDense_Column(SUNMatrix Amat, sunindextype j)
 {
-  SUNMatrixContent_OneMklDense A = (SUNMatrixContent_OneMklDense)Amat->content;
-  return (((sunrealtype*)A->data->ptr) + j * A->block_rows);
+  SUNMatrixContent_OneMklDense A = (SUNMatrixContent_OneMklDense) Amat->content;
+  return( ((realtype*) A->data->ptr) + j * A->block_rows );
 }
 
 /* Get matrix block data */
@@ -106,40 +106,38 @@ SUNDIALS_EXPORT
 sunindextype SUNMatrix_OneMklDense_BlockLData(SUNMatrix A);
 
 SUNDIALS_EXPORT
-sunrealtype** SUNMatrix_OneMklDense_BlockData(SUNMatrix A);
+realtype** SUNMatrix_OneMklDense_BlockData(SUNMatrix A);
 
-static inline sunrealtype* SUNMatrix_OneMklDense_Block(SUNMatrix Amat,
-                                                       sunindextype k)
+SUNDIALS_STATIC_INLINE
+realtype* SUNMatrix_OneMklDense_Block(SUNMatrix Amat, sunindextype k)
 {
-  SUNMatrixContent_OneMklDense A = (SUNMatrixContent_OneMklDense)Amat->content;
-  return (((sunrealtype*)A->data->ptr) + k * A->block_rows * A->block_cols);
+  SUNMatrixContent_OneMklDense A = (SUNMatrixContent_OneMklDense) Amat->content;
+  return( ((realtype*) A->data->ptr) + k * A->block_rows * A->block_cols );
 }
 
-static inline sunrealtype* SUNMatrix_OneMklDense_BlockColumn(SUNMatrix Amat,
-                                                             sunindextype k,
-                                                             sunindextype j)
+SUNDIALS_STATIC_INLINE
+realtype* SUNMatrix_OneMklDense_BlockColumn(SUNMatrix Amat, sunindextype k,
+                                            sunindextype j)
 {
-  SUNMatrixContent_OneMklDense A = (SUNMatrixContent_OneMklDense)Amat->content;
-  return (((sunrealtype*)A->data->ptr) + k * A->block_rows * A->block_cols +
-          j * A->block_rows);
+  SUNMatrixContent_OneMklDense A = (SUNMatrixContent_OneMklDense) Amat->content;
+  return( ((realtype*) A->data->ptr) +
+          k * A->block_rows * A->block_cols + j * A->block_rows );
 }
 
 /* Copy data */
 
 SUNDIALS_EXPORT
-SUNErrCode SUNMatrix_OneMklDense_CopyToDevice(SUNMatrix A, sunrealtype* h_data);
+int SUNMatrix_OneMklDense_CopyToDevice(SUNMatrix A, realtype* h_data);
 
 SUNDIALS_EXPORT
-SUNErrCode SUNMatrix_OneMklDense_CopyFromDevice(SUNMatrix A, sunrealtype* h_data);
+int SUNMatrix_OneMklDense_CopyFromDevice(SUNMatrix A, realtype* h_data);
 
 /* ---------------------------------------------------------------------------
  * SUNMatrix API functions
  * ---------------------------------------------------------------------------*/
 
-static inline SUNMatrix_ID SUNMatGetID_OneMklDense(SUNMatrix A)
-{
-  return SUNMATRIX_ONEMKLDENSE;
-}
+SUNDIALS_STATIC_INLINE
+SUNMatrix_ID SUNMatGetID_OneMklDense(SUNMatrix A) { return SUNMATRIX_ONEMKLDENSE; }
 
 SUNDIALS_EXPORT
 SUNMatrix SUNMatClone_OneMklDense(SUNMatrix A);
@@ -148,25 +146,25 @@ SUNDIALS_EXPORT
 void SUNMatDestroy_OneMklDense(SUNMatrix A);
 
 SUNDIALS_EXPORT
-SUNErrCode SUNMatZero_OneMklDense(SUNMatrix A);
+int SUNMatZero_OneMklDense(SUNMatrix A);
 
 SUNDIALS_EXPORT
-SUNErrCode SUNMatCopy_OneMklDense(SUNMatrix A, SUNMatrix B);
+int SUNMatCopy_OneMklDense(SUNMatrix A, SUNMatrix B);
 
 SUNDIALS_EXPORT
-SUNErrCode SUNMatScaleAdd_OneMklDense(sunrealtype c, SUNMatrix A, SUNMatrix B);
+int SUNMatScaleAdd_OneMklDense(realtype c, SUNMatrix A, SUNMatrix B);
 
 SUNDIALS_EXPORT
-SUNErrCode SUNMatScaleAddI_OneMklDense(sunrealtype c, SUNMatrix A);
+int SUNMatScaleAddI_OneMklDense(realtype c, SUNMatrix A);
 
 SUNDIALS_EXPORT
-SUNErrCode SUNMatMatvecSetup_OneMklDense(SUNMatrix A);
+int SUNMatMatvecSetup_OneMklDense(SUNMatrix A);
 
 SUNDIALS_EXPORT
-SUNErrCode SUNMatMatvec_OneMklDense(SUNMatrix A, N_Vector x, N_Vector y);
+int SUNMatMatvec_OneMklDense(SUNMatrix A, N_Vector x, N_Vector y);
 
 SUNDIALS_EXPORT
-SUNErrCode SUNMatSpace_OneMklDense(SUNMatrix A, long int* lenrw, long int* leniw);
+int SUNMatSpace_OneMklDense(SUNMatrix A, long int *lenrw, long int *leniw);
 
 #ifdef __cplusplus
 }

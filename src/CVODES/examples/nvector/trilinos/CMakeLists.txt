@@ -2,7 +2,7 @@
 # Programmer(s): Slaven Peles and Cody J. Balos @ LLNL
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -29,15 +29,22 @@ else()
     )
 endif()
 
+set(shared_SOURCES
+  ${SUNDIALS_SOURCE_DIR}/examples/nvector/test_nvector.c
+  ${SUNDIALS_SOURCE_DIR}/examples/nvector/test_mpinvector.c
+  )
+
 # Dependencies for nvector examples
 if(Trilinos_MPI)
   set(nvector_examples_dependencies
     test_nvector
     test_mpinvector
+    sundials_nvector
     )
 else()
   set(nvector_examples_dependencies
     test_nvector
+    sundials_nvector
     )
 endif()
 
@@ -57,7 +64,7 @@ include_directories(. ..)
 set(NVECS_LIB sundials_nvectrilinos)
 
 # Set-up linker flags and link libraries
-set(SUNDIALS_LIBS ${NVECS_LIB} ${EXE_EXTRA_LINK_LIBS})
+set(SUNDIALS_LIBS ${NVECS_LIB} ${EXTRA_LINK_LIBS})
 
 # Add the build and install targets for each example
 foreach(example_tuple ${nvector_trilinos_examples})
@@ -73,19 +80,13 @@ foreach(example_tuple ${nvector_trilinos_examples})
   # example source files once for testing with different inputs
   if(NOT TARGET ${example})
     # example source files
-    add_executable(${example} ${example}.cpp)
-
-    # link vector test utilties
-    target_link_libraries(${example} PRIVATE test_nvector_obj)
-    if (Trilinos_MPI)
-      target_link_libraries(${example} PRIVATE test_nvectormpi_obj)
-    endif()
+    add_executable(${example} ${example}.cpp ${shared_SOURCES})
 
     set_target_properties(${example} PROPERTIES FOLDER "Examples")
 
     # Trilinos libraries must be linked after SUNDIALS libraries!
     # Otherwise, segfaults may occur; something to do with RCPs.
-    target_link_libraries(${example} PRIVATE ${SUNDIALS_LIBS})
+    target_link_libraries(${example} ${SUNDIALS_LIBS})
   endif()
 
   # check if example args are provided and set the test name
@@ -116,6 +117,7 @@ foreach(example_tuple ${nvector_trilinos_examples})
       ../test_nvector.c
       ../test_mpinvector.c
       ../test_nvector.h
+      ../../../src/sundials/sundials_nvector.c
       DESTINATION ${EXAMPLES_INSTALL_PATH}/nvector/trilinos)
   endif()
 

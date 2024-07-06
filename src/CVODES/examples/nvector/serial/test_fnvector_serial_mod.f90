@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,7 +17,7 @@
 
 module test_nvector_serial
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use fnvector_serial_mod
   use test_utilities
   implicit none
@@ -32,6 +32,7 @@ contains
 
     integer(c_long)         :: lenrw(1), leniw(1) ! real and int work space size
     integer(c_long)         :: ival               ! integer work value
+    type(c_ptr)             :: cptr               ! c_ptr work value
     real(c_double)          :: rval               ! real work value
     real(c_double)          :: xdata(N)           ! vector data array
     real(c_double), pointer :: xptr(:)            ! pointer to vector data array
@@ -40,25 +41,25 @@ contains
     type(c_ptr)             :: xvecs, zvecs       ! C pointer to array of C pointers to N_Vectors
 
     !===== Setup ====
-    x => FN_VMake_Serial(N, xdata, sunctx)
+    x => FN_VMake_Serial(N, xdata)
     call FN_VConst(ONE, x)
     y => FN_VClone_Serial(x)
     call FN_VConst(ONE, y)
     z => FN_VClone_Serial(x)
     call FN_VConst(ONE, z)
 
-    xvecs = FN_VCloneVectorArray(nv, x)
-    zvecs = FN_VCloneVectorArray(nv, z)
+    xvecs = FN_VCloneVectorArray_Serial(nv, x)
+    zvecs = FN_VCloneVectorArray_Serial(nv, z)
     nvarr = (/ ONE, ONE, ONE /)
 
     !===== Test =====
 
     ! test constructors
-    tmp => FN_VNewEmpty_Serial(N, sunctx)
+    tmp => FN_VNewEmpty_Serial(N)
     call FN_VDestroy_Serial(tmp)
-    tmp => FN_VMake_Serial(N, xdata, sunctx)
+    tmp => FN_VMake_Serial(N, xdata)
     call FN_VDestroy_Serial(tmp)
-    tmp => FN_VNew_Serial(N, sunctx)
+    tmp => FN_VNew_Serial(N)
     call FN_VDestroy_Serial(tmp)
     tmp => FN_VCloneEmpty_Serial(x)
     call FN_VDestroy_Serial(tmp)
@@ -68,7 +69,7 @@ contains
     call FN_VSpace_Serial(x, lenrw, leniw)
     xptr => FN_VGetArrayPointer_Serial(x)
     call FN_VSetArrayPointer_Serial(xdata, x)
-    ival = FN_VGetCommunicator(x)
+    cptr = FN_VGetCommunicator(x)
     ival = FN_VGetLength_Serial(x)
 
     ! test standard vector operations
@@ -108,8 +109,8 @@ contains
     call FN_VDestroy_Serial(x)
     call FN_VDestroy_Serial(y)
     call FN_VDestroy_Serial(z)
-    call FN_VDestroyVectorArray(xvecs, nv)
-    call FN_VDestroyVectorArray(zvecs, nv)
+    call FN_VDestroyVectorArray_Serial(xvecs, nv)
+    call FN_VDestroyVectorArray_Serial(zvecs, nv)
 
     ret = 0
 
@@ -125,7 +126,7 @@ contains
     !===== Setup ====
     fails = 0
 
-    x => FN_VMake_Serial(N, xdata, sunctx)
+    x => FN_VMake_Serial(N, xdata)
     call FN_VConst(ONE, x)
 
     !==== tests ====
@@ -143,7 +144,7 @@ end module
 
 integer(C_INT) function check_ans(ans, X, local_length) result(failure)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use test_utilities
   implicit none
 
@@ -165,7 +166,7 @@ end function check_ans
 
 logical function has_data(X) result(failure)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use test_utilities
   implicit none
 
@@ -189,8 +190,6 @@ program main
   !============== Introduction =============
   print *, 'Serial N_Vector Fortran 2003 interface test'
 
-  call Test_Init(SUN_COMM_NULL)
-
   fails = smoke_tests()
   if (fails /= 0) then
     print *, 'FAILURE: smoke tests failed'
@@ -206,7 +205,4 @@ program main
   else
     print *, 'SUCCESS: all unit tests passed'
   end if
-
-  call Test_Finalize()
-
 end program main

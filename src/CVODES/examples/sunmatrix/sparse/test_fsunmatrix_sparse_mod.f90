@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,7 +17,6 @@
 
 module test_fsunmatrix_sparse
   use, intrinsic :: iso_c_binding
-  use test_utilities
   implicit none
 
   integer(C_LONG), parameter :: N = 5
@@ -28,10 +27,11 @@ contains
 
     !======== Inclusions ==========
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
     use fsunmatrix_sparse_mod
     use fnvector_serial_mod
+    use test_utilities
 
     !======== Declarations ========
     implicit none
@@ -48,13 +48,13 @@ contains
 
     fails = 0
 
-    x => FN_VNew_Serial(N, sunctx)
-    y => FN_VNew_Serial(N, sunctx)
+    x => FN_VNew_Serial(N)
+    y => FN_VNew_Serial(N)
 
     !===== Calls to interface =====
 
     ! constructor
-    A => FSUNSparseMatrix(N, N, N*N, CSR_MAT, sunctx)
+    A => FSUNSparseMatrix(N, N, N*N, CSR_MAT)
     if (.not. associated(A)) then
       print *,'>>> FAILED - ERROR in FSUNSparseMatrix; halting'
       stop 1
@@ -94,8 +94,8 @@ contains
 
   integer(C_INT) function unit_tests() result(fails)
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
     use fnvector_serial_mod
     use fsunmatrix_dense_mod
     use fsunmatrix_sparse_mod
@@ -111,8 +111,8 @@ contains
     fails = 0
 
     ! create dense A and I
-    DA => FSUNDenseMatrix(N, N, sunctx)
-    DI => FSUNDenseMatrix(N, N, sunctx)
+    DA => FSUNDenseMatrix(N, N)
+    DI => FSUNDenseMatrix(N, N)
 
     ! fill A matrix
     Adata => FSUNDenseMatrix_Data(DA)
@@ -133,8 +133,8 @@ contains
     I => FSUNSparseFromDenseMatrix(DI, ZERO, CSR_MAT)
 
     ! create vectors
-    x => FN_VNew_Serial(N, sunctx)
-    y => FN_VNew_Serial(N, sunctx)
+    x => FN_VNew_Serial(N)
+    y => FN_VNew_Serial(N)
 
     ! fill vector x
     xdata => FN_VGetArrayPointer(x)
@@ -183,8 +183,6 @@ program main
   !============== Introduction =============
   print *, 'Sparse SUNMatrix Fortran 2003 interface test'
 
-  call Test_Init(SUN_COMM_NULL)
-
   fails = unit_tests()
   if (fails /= 0) then
     print *, 'FAILURE: n unit tests failed'
@@ -193,14 +191,12 @@ program main
     print *, 'SUCCESS: all unit tests passed'
   end if
 
-  call Test_Finalize()
-
 end program main
 
 ! exported functions used by test_sunmatrix
 integer(C_INT) function check_matrix(A, B, tol) result(fails)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_matrix_mod
   use fsunmatrix_sparse_mod
   use test_utilities
 
@@ -286,7 +282,7 @@ end function check_matrix
 
 integer(C_INT) function check_matrix_entry(A, c, tol) result(fails)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_matrix_mod
   use fsunmatrix_sparse_mod
   use test_utilities
 
@@ -319,7 +315,7 @@ end function check_matrix_entry
 
 logical function is_square(A) result(res)
   use, intrinsic :: iso_c_binding
-  use fsundials_core_mod
+  use fsundials_matrix_mod
   use fsunmatrix_sparse_mod
 
   implicit none

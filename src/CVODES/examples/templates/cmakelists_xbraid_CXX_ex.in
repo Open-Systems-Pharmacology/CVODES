@@ -2,7 +2,7 @@
 # Programmer: David J. Gardner @ LLNL
 # -----------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -19,7 +19,7 @@
 # -----------------------------------------------------------------
 
 # Set the minimum required cmake version
-cmake_minimum_required(VERSION @CMAKE_VERSION@)
+cmake_minimum_required(VERSION 3.5)
 
 # Set cache variables for compilers and flags
 set(CMAKE_CXX_COMPILER
@@ -29,10 +29,6 @@ set(CMAKE_CXX_COMPILER
 set(CMAKE_CXX_FLAGS
   "@CMAKE_CXX_FLAGS@"
   CACHE STRING "C++ compiler flags")
-
-set(CMAKE_CXX_STANDARD
-  @CMAKE_CXX_STANDARD@
-  CACHE STRING "C++ standard")
 
 # Specify project name and languages
 project(@SOLVER@_CXX_xbraid_examples CXX)
@@ -59,10 +55,6 @@ find_library(SUNDIALS_SOLVER_LIB
   @SOLVER_LIB@ ${SUNDIALS_LIBRARY_DIR}
   DOC "@SOLVER@ library")
 
-find_library(SUNDIALS_CORE_LIB
-  sundials_core ${SUNDIALS_LIBRARY_DIR}
-  DOC "SUNDIALS core library")
-
 # Find the parallel vector library
 find_library(SUNDIALS_NVECPAR_LIB
   sundials_nvecparallel ${SUNDIALS_LIBRARY_DIR}
@@ -77,12 +69,10 @@ find_library(SUNDIALS_XBRAID_LIB
 set(SUNDIALS_EXTRA_LIBS @LIBS@ CACHE STRING "Additional libraries")
 
 # List of SUNDIALS libraries
-set(SUNDIALS_LIBRARIES 
-  -L${SUNDIALS_LIBRARY_DIR}
+set(SUNDIALS_LIBRARIES
   ${SUNDIALS_SOLVER_LIB}
   ${SUNDIALS_NVECPAR_LIB}
   ${SUNDIALS_XBRAID_LIB}
-  ${SUNDIALS_CORE_LIB}
   ${SUNDIALS_EXTRA_LIBS})
 
 # ------------------------------------------------------------------------------

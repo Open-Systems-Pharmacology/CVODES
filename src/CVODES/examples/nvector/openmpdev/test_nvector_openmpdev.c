@@ -2,7 +2,7 @@
  * Programmer(s): David J. Gardner @ LLNL
  * -----------------------------------------------------------------
  * SUNDIALS Copyright Start
- * Copyright (c) 2002-2024, Lawrence Livermore National Security
+ * Copyright (c) 2002-2021, Lawrence Livermore National Security
  * and Southern Methodist University.
  * All rights reserved.
  *
@@ -15,14 +15,15 @@
  * module implementation.
  * -----------------------------------------------------------------*/
 
-#include <nvector/nvector_openmpdev.h>
-#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sundials/sundials_math.h>
-#include <sundials/sundials_types.h>
 
+#include <sundials/sundials_types.h>
+#include <nvector/nvector_openmpdev.h>
+#include <sundials/sundials_math.h>
 #include "test_nvector.h"
+
+#include <omp.h>
 
 /* OpenMPDEV vector specific tests */
 int Test_N_VMake_OpenMPDEV(N_Vector X, sunindextype length, int myid);
@@ -30,54 +31,48 @@ int Test_N_VMake_OpenMPDEV(N_Vector X, sunindextype length, int myid);
 /* ----------------------------------------------------------------------
  * Main NVector Testing Routine
  * --------------------------------------------------------------------*/
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
-  int fails = 0;             /* counter for test failures */
-  int retval;                /* function return value     */
-  sunindextype length;       /* vector length             */
-  N_Vector U, V, W, X, Y, Z; /* test vectors              */
-  int print_timing;          /* turn timing on/off        */
-
-  Test_Init(SUN_COMM_NULL);
+  int          fails = 0;         /* counter for test failures */
+  int          retval;            /* function return value     */
+  sunindextype length;            /* vector length             */
+  N_Vector     U, V, W, X, Y, Z;  /* test vectors              */
+  int          print_timing;      /* turn timing on/off        */
 
   /* check input and set vector length */
-  if (argc < 3)
-  {
+  if (argc < 3){
     printf("ERROR: TWO (2) Inputs required: vector length and print timing \n");
-    Test_Abort(-1);
+    return(-1);
   }
 
-  length = (sunindextype)atol(argv[1]);
-  if (length <= 0)
-  {
+  length = (sunindextype) atol(argv[1]);
+  if (length <= 0) {
     printf("ERROR: length of vector must be a positive integer \n");
-    Test_Abort(-1);
+    return(-1);
   }
 
   print_timing = atoi(argv[2]);
   SetTiming(print_timing, 0);
 
-  printf("Testing the OpenMPDEV N_Vector \n");
-  printf("Vector length %ld \n", (long int)length);
+  printf("Testing the OpenMP DEV N_Vector \n");
+  printf("Vector length %ld \n", (long int) length);
   printf("\n omp_get_default_device = %d \n", omp_get_default_device());
   printf("\n omp_get_num_devices    = %d \n", omp_get_num_devices());
   printf("\n omp_get_initial_device = %d \n", omp_get_initial_device());
   printf("\n omp_is_initial_device  = %d \n", omp_is_initial_device());
 
   /* Create new vectors */
-  W = N_VNewEmpty_OpenMPDEV(length, sunctx);
-  if (W == NULL)
-  {
+  W = N_VNewEmpty_OpenMPDEV(length);
+  if (W == NULL) {
     printf("FAIL: Unable to create a new empty vector \n\n");
-    Test_Abort(1);
+    return(1);
   }
 
-  X = N_VNew_OpenMPDEV(length, sunctx);
-  if (X == NULL)
-  {
+  X = N_VNew_OpenMPDEV(length);
+  if (X == NULL) {
     N_VDestroy(W);
     printf("FAIL: Unable to create a new vector \n\n");
-    Test_Abort(1);
+    return(1);
   }
 
   /* Check vector ID */
@@ -87,7 +82,7 @@ int main(int argc, char* argv[])
   fails += Test_N_VGetLength(X, 0);
 
   /* Check vector communicator */
-  fails += Test_N_VGetCommunicator(X, SUN_COMM_NULL, 0);
+  fails += Test_N_VGetCommunicator(X, NULL, 0);
 
   /* Test clone functions */
   fails += Test_N_VCloneEmpty(X, 0);
@@ -97,22 +92,20 @@ int main(int argc, char* argv[])
 
   /* Clone additional vectors for testing */
   Y = N_VClone(X);
-  if (Y == NULL)
-  {
+  if (Y == NULL) {
     N_VDestroy(W);
     N_VDestroy(X);
     printf("FAIL: Unable to create a new vector \n\n");
-    Test_Abort(1);
+    return(1);
   }
 
   Z = N_VClone(X);
-  if (Z == NULL)
-  {
+  if (Z == NULL) {
     N_VDestroy(W);
     N_VDestroy(X);
     N_VDestroy(Y);
     printf("FAIL: Unable to create a new vector \n\n");
-    Test_Abort(1);
+    return(1);
   }
 
   /* Standard vector operation tests */
@@ -142,16 +135,15 @@ int main(int argc, char* argv[])
   printf("\nTesting fused and vector array operations (disabled):\n\n");
 
   /* create vector and disable all fused and vector array operations */
-  U      = N_VNew_OpenMPDEV(length, sunctx);
+  U = N_VNew_OpenMPDEV(length);
   retval = N_VEnableFusedOps_OpenMPDEV(U, SUNFALSE);
-  if (U == NULL || retval != 0)
-  {
+  if (U == NULL || retval != 0) {
     N_VDestroy(W);
     N_VDestroy(X);
     N_VDestroy(Y);
     N_VDestroy(Z);
     printf("FAIL: Unable to create a new vector \n\n");
-    Test_Abort(1);
+    return(1);
   }
 
   /* fused operations */
@@ -172,17 +164,16 @@ int main(int argc, char* argv[])
   printf("\nTesting fused and vector array operations (enabled):\n\n");
 
   /* create vector and enable all fused and vector array operations */
-  V      = N_VNew_OpenMPDEV(length, sunctx);
+  V = N_VNew_OpenMPDEV(length);
   retval = N_VEnableFusedOps_OpenMPDEV(V, SUNTRUE);
-  if (V == NULL || retval != 0)
-  {
+  if (V == NULL || retval != 0) {
     N_VDestroy(W);
     N_VDestroy(X);
     N_VDestroy(Y);
     N_VDestroy(Z);
     N_VDestroy(U);
     printf("FAIL: Unable to create a new vector \n\n");
-    Test_Abort(1);
+    return(1);
   }
 
   /* fused operations */
@@ -212,10 +203,6 @@ int main(int argc, char* argv[])
   fails += Test_N_VConstrMaskLocal(X, Y, Z, length, 0);
   fails += Test_N_VMinQuotientLocal(X, Y, length, 0);
 
-  /* local fused reduction operations */
-  printf("\nTesting local fused reduction operations:\n\n");
-  fails += Test_N_VDotProdMultiLocal(V, length, 0);
-
   /* Free vectors */
   N_VDestroy(U);
   N_VDestroy(V);
@@ -225,11 +212,13 @@ int main(int argc, char* argv[])
   N_VDestroy(Z);
 
   /* Print result */
-  if (fails) { printf("FAIL: NVector module failed %i tests \n\n", fails); }
-  else { printf("SUCCESS: NVector module passed all tests \n\n"); }
+  if (fails) {
+    printf("FAIL: NVector module failed %i tests \n\n", fails);
+  } else {
+    printf("SUCCESS: NVector module passed all tests \n\n");
+  }
 
-  Test_Finalize();
-  return (fails);
+  return(fails);
 }
 
 /* ----------------------------------------------------------------------
@@ -243,7 +232,7 @@ int main(int argc, char* argv[])
 int Test_N_VMake_OpenMPDEV(N_Vector X, sunindextype length, int myid)
 {
   int failure = 0;
-  sunrealtype *h_data, *d_data;
+  realtype *h_data, *d_data;
   N_Vector Y;
 
   N_VConst(NEG_HALF, X);
@@ -254,110 +243,113 @@ int Test_N_VMake_OpenMPDEV(N_Vector X, sunindextype length, int myid)
 
   /* Case 1: h_data and d_data are not null */
   Y = N_VMake_OpenMPDEV(length, h_data, d_data);
-  if (Y == NULL)
-  {
+  if (Y == NULL) {
     printf(">>> FAILED test -- N_VMake_OpenMPDEV, Proc %d \n", myid);
     printf("    Vector is NULL \n \n");
-    return (1);
+    return(1);
   }
 
-  if (N_VGetHostArrayPointer_OpenMPDEV(Y) == NULL)
-  {
+  if (N_VGetHostArrayPointer_OpenMPDEV(Y) == NULL) {
     printf(">>> FAILED test -- N_VMake_OpenMPDEV, Proc %d \n", myid);
     printf("    Vector host data == NULL \n \n");
     N_VDestroy(Y);
-    return (1);
+    return(1);
   }
 
-  if (N_VGetDeviceArrayPointer_OpenMPDEV(Y) == NULL)
-  {
+  if (N_VGetDeviceArrayPointer_OpenMPDEV(Y) == NULL) {
     printf(">>> FAILED test -- N_VMake_OpenMPDEV, Proc %d \n", myid);
     printf("    Vector device data -= NULL \n \n");
     N_VDestroy(Y);
-    return (1);
+    return(1);
   }
 
   failure += check_ans(NEG_HALF, Y, length);
 
-  if (failure)
-  {
+  if (failure) {
     printf(">>> FAILED test -- N_VMake_OpenMPDEV Case 1, Proc %d \n", myid);
     printf("    Failed N_VConst check \n \n");
     N_VDestroy(Y);
-    return (1);
+    return(1);
   }
 
-  if (myid == 0) { printf("PASSED test -- N_VMake_OpenMPDEV Case 1 \n"); }
+  if (myid == 0) {
+    printf("PASSED test -- N_VMake_OpenMPDEV Case 1 \n");
+  }
 
   N_VDestroy(Y);
 
   /* Case 2: data is null */
   Y = N_VMake_OpenMPDEV(length, NULL, NULL);
-  if (Y != NULL)
-  {
+  if (Y != NULL) {
     printf(">>> FAILED test -- N_VMake_OpenMPDEV Case 2, Proc %d \n", myid);
     printf("    Vector is not NULL \n \n");
-    return (1);
+    return(1);
   }
 
-  if (myid == 0) { printf("PASSED test -- N_VMake_OpenMPDEV Case 2 \n"); }
+  if (myid == 0) {
+    printf("PASSED test -- N_VMake_OpenMPDEV Case 2 \n");
+  }
 
   N_VDestroy(Y);
 
-  return (failure);
+  return(failure);
 }
 
 /* ----------------------------------------------------------------------
  * Implementation specific utility functions for vector tests
  * --------------------------------------------------------------------*/
-int check_ans(sunrealtype ans, N_Vector X, sunindextype local_length)
+int check_ans(realtype ans, N_Vector X, sunindextype local_length)
 {
-  int failure = 0;
+  int          failure = 0;
   sunindextype i;
-  sunrealtype* Xdata;
+  realtype     *Xdata;
 
   N_VCopyFromDevice_OpenMPDEV(X);
   Xdata = N_VGetHostArrayPointer_OpenMPDEV(X);
 
   /* check vector data */
-  for (i = 0; i < local_length; i++) { failure += SUNRCompare(Xdata[i], ans); }
+  for (i = 0; i < local_length; i++) {
+    failure += SUNRCompare(Xdata[i], ans);
+  }
 
   return (failure > ZERO) ? (1) : (0);
 }
 
-sunbooleantype has_data(N_Vector X)
+booleantype has_data(N_Vector X)
 {
-  sunrealtype* Xdata = N_VGetHostArrayPointer_OpenMPDEV(X);
-  if (Xdata == NULL) { return SUNFALSE; }
-  else { return SUNTRUE; }
+  realtype *Xdata = N_VGetHostArrayPointer_OpenMPDEV(X);
+  if (Xdata == NULL)
+    return SUNFALSE;
+  else
+    return SUNTRUE;
 }
 
-void set_element(N_Vector X, sunindextype i, sunrealtype val)
+void set_element(N_Vector X, sunindextype i, realtype val)
 {
   set_element_range(X, i, i, val);
 }
 
 void set_element_range(N_Vector X, sunindextype is, sunindextype ie,
-                       sunrealtype val)
+                       realtype val)
 {
-  sunrealtype* xdev;
-  int dev;
-  sunindextype i;
+  realtype     *xdev;
+  int           dev;
+  sunindextype  i;
 
   xdev = N_VGetDeviceArrayPointer_OpenMPDEV(X);
-  dev  = omp_get_default_device();
+  dev = omp_get_default_device();
 
   /* set elements [is,ie] of the data array */
-#pragma omp target map(to : is, ie, val) is_device_ptr(xdev) device(dev)
+#pragma omp target map(to:is,ie,val) is_device_ptr(xdev) device(dev)
 #pragma omp teams distribute parallel for schedule(static, 1)
   {
-    for (i = is; i <= ie; i++) { xdev[i] = val; }
+    for(i = is; i <= ie; i++) xdev[i] = val;
   }
 }
 
-sunrealtype get_element(N_Vector X, sunindextype i)
+realtype get_element(N_Vector X, sunindextype i)
 {
-  sunrealtype* data;
+  realtype *data;
 
   N_VCopyFromDevice_OpenMPDEV(X);
   data = N_VGetHostArrayPointer_OpenMPDEV(X);
@@ -368,7 +360,7 @@ sunrealtype get_element(N_Vector X, sunindextype i)
 double max_time(N_Vector X, double time)
 {
   /* not running in parallel, just return input time */
-  return (time);
+  return(time);
 }
 
 void sync_device(N_Vector x)

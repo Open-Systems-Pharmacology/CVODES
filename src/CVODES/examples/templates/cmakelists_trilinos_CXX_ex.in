@@ -2,7 +2,7 @@
 # Programmer(s): Slaven Peles @ LLNL
 # -----------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -19,7 +19,7 @@
 # -----------------------------------------------------------------
 
 # Set the minimum required cmake version
-cmake_minimum_required(VERSION @CMAKE_VERSION@)
+cmake_minimum_required(VERSION 3.5)
 
 # Set cache variables for compilers and flags
 set(CMAKE_C_COMPILER
@@ -30,11 +30,6 @@ set(CMAKE_C_FLAGS
   "@Trilinos_C_COMPILER_FLAGS@"
   CACHE STRING "Trilinos C compiler flags")
 
-if("@CMAKE_C_STANDARD@")
-  set(CMAKE_C_STANDARD "@CMAKE_C_STANDARD@"
-    CACHE STRING "C standard")
-endif()
-
 set(CMAKE_CXX_COMPILER
   @Trilinos_CXX_COMPILER@
   CACHE FILEPATH "Trilinos C++ compiler")
@@ -42,10 +37,6 @@ set(CMAKE_CXX_COMPILER
 set(CMAKE_CXX_FLAGS
   "@Trilinos_CXX_COMPILER_FLAGS@"
   CACHE STRING "Trilinos C++ compiler flags")
-
-set(CMAKE_CXX_STANDARD
-  @CMAKE_CXX_STANDARD@
-  CACHE STRING "C++ standard")
 
 # Specify project name and languages
 project(@SOLVER@_CXX_trilinos_examples C CXX)
@@ -65,13 +56,11 @@ set(SUNDIALS_LIBRARY_DIR
   @CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_LIBDIR@
   CACHE PATH "Location of SUNDIALS libraries")
 
-find_library(SUNDIALS_CORE_LIB
-  sundials_core ${SUNDIALS_LIBRARY_DIR}
-  DOC "SUNDIALS core library")
-
+# Find the SUNDIALS libraries
 find_library(SUNDIALS_SOLVER_LIB
   @SOLVER_LIB@ ${SUNDIALS_LIBRARY_DIR}
   DOC "@SOLVER@ library")
+
 find_library(SUNDIALS_NVEC_LIB
   sundials_nvectrilinos ${SUNDIALS_LIBRARY_DIR}
   DOC "NVECTOR_TRILINOS library")
@@ -88,8 +77,7 @@ endif()
 set(SUNDIALS_LIBRARIES
   -L${SUNDIALS_LIBRARY_DIR}
   ${SUNDIALS_SOLVER_LIB}
-  ${SUNDIALS_NVEC_LIB}  
-  ${SUNDIALS_CORE_LIB}
+  ${SUNDIALS_NVEC_LIB}
   ${SUNDIALS_EXTRA_LIBS})
 
 # ------------------------------------------------------------------------------

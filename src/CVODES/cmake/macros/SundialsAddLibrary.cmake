@@ -2,7 +2,7 @@
 # Programmer(s): Cody J. Balos @ LLNL
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -152,8 +152,6 @@ macro(sundials_add_library target)
     # create the target for the object library
     add_library(${obj_target} OBJECT ${sources})
 
-    set_target_properties(${obj_target} PROPERTIES FOLDER "obj")
-
     # add all object libraries to object library
     if(sundials_add_library_OBJECT_LIBRARIES)
       target_link_libraries(${obj_target}
@@ -161,11 +159,8 @@ macro(sundials_add_library target)
     endif()
 
     # add all link libraries to object library
-    if(SUNDIALS_MATH_LIBRARY)
-      target_link_libraries(${obj_target} PRIVATE "${SUNDIALS_MATH_LIBRARY}")
-    endif()
-    if(SUNDIALS_RT_LIBRARY)
-      target_link_libraries(${obj_target} PRIVATE "${SUNDIALS_RT_LIBRARY}")
+    if(USE_GENERIC_MATH)
+      target_link_libraries(${obj_target} PRIVATE m)
     endif()
     if(sundials_add_library_LINK_LIBRARIES)
       if(${_libtype} MATCHES "STATIC")
@@ -176,22 +171,12 @@ macro(sundials_add_library target)
       target_link_libraries(${obj_target} ${_all_libs})
     endif()
 
-    if(SUNDIALS_BUILD_WITH_PROFILING)
-      if(ENABLE_CALIPER)
-        target_link_libraries(${obj_target} PUBLIC caliper)
-      endif()
-      if(ENABLE_ADIAK)
-        target_link_libraries(${obj_target} PUBLIC adiak::adiak ${CMAKE_DL_LIBS})
-      endif()
-    endif()
-
     # add includes to object library
     target_include_directories(${obj_target}
       PUBLIC
       $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
       $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
-      $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/sundials>
-      $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/src/sundials>
+      $<BUILD_INTERFACE:${SUNDIALS_SOURCE_DIR}/src/sundials>
     )
     if(sundials_add_library_INCLUDE_DIRECTORIES)
       string(REPLACE "{{libtype}}" "${_libtype}" _includes "${sundials_add_library_INCLUDE_DIRECTORIES}")
@@ -202,7 +187,7 @@ macro(sundials_add_library target)
     if(${_libtype} MATCHES "STATIC")
       target_compile_definitions(${obj_target} PRIVATE SUNDIALS_STATIC_DEFINE)
     else()
-      target_compile_definitions(${obj_target} PRIVATE sundials_core_EXPORTS)
+      target_compile_definitions(${obj_target} PRIVATE sundials_generic_EXPORTS)
     endif()
 
     # add all other compile definitions to object library
@@ -241,8 +226,6 @@ macro(sundials_add_library target)
 
       add_library(${_actual_target_name} ${_libtype} $<TARGET_OBJECTS:${obj_target}>)
 
-      set_target_properties(${_actual_target_name} PROPERTIES FOLDER "src")
-
       # add any object library dependencies
       if(sundials_add_library_OBJECT_LIBRARIES)
         if(${_libtype} MATCHES "STATIC")
@@ -252,30 +235,17 @@ macro(sundials_add_library target)
         endif()
         foreach(_tmp ${_all_objs})
           # We use target_sources since target_link_libraries does not work
-          # as expected with CMake 3.12 (see CMake issues 18090 and 18692).
-          # TODO(DJG): Update whenever we require CMake 3.14 or newer
+          # properly with CMake 3.12.
           target_sources(${_actual_target_name} PRIVATE $<TARGET_OBJECTS:${_tmp}>)
         endforeach()
       endif()
 
       # add all link libraries
-      if(SUNDIALS_MATH_LIBRARY)
-        target_link_libraries(${_actual_target_name} PRIVATE "${SUNDIALS_MATH_LIBRARY}")
-      endif()
-      if(SUNDIALS_RT_LIBRARY)
-        target_link_libraries(${_actual_target_name} PRIVATE "${SUNDIALS_RT_LIBRARY}")
+      if(USE_GENERIC_MATH)
+        target_link_libraries(${_actual_target_name} PRIVATE m)
       endif()
       if(sundials_add_library_LINK_LIBRARIES)
         target_link_libraries(${_actual_target_name} ${sundials_add_library_LINK_LIBRARIES})
-      endif()
-
-      if(SUNDIALS_BUILD_WITH_PROFILING)
-        if(ENABLE_CALIPER)
-          target_link_libraries(${_actual_target_name} PUBLIC caliper)
-        endif()
-        if(ENABLE_ADIAK)
-          target_link_libraries(${_actual_target_name} PUBLIC adiak::adiak ${CMAKE_DL_LIBS})
-        endif()
       endif()
 
       # add common includes
@@ -284,8 +254,7 @@ macro(sundials_add_library target)
       target_include_directories(${_actual_target_name} PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/sundials>
-        $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/src/sundials>
+        $<BUILD_INTERFACE:${SUNDIALS_SOURCE_DIR}/src/sundials>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
       # add all other includes
@@ -298,7 +267,7 @@ macro(sundials_add_library target)
       if(${_libtype} MATCHES "STATIC")
         target_compile_definitions(${_actual_target_name} PRIVATE SUNDIALS_STATIC_DEFINE)
       else()
-        target_compile_definitions(${obj_target} PRIVATE sundials_core_EXPORTS)
+        target_compile_definitions(${obj_target} PRIVATE sundials_generic_EXPORTS)
       endif()
 
       # add all other compile definitions
@@ -379,20 +348,12 @@ macro(sundials_add_library target)
     if(NOT sundials_add_library_OBJECT_LIB_ONLY)
       add_library(${target} ALIAS ${target}${_SHARED_LIB_SUFFIX})
       set(_SUNDIALS_ALIAS_TARGETS "${target}->${target}${_SHARED_LIB_SUFFIX};${_SUNDIALS_ALIAS_TARGETS}" CACHE INTERNAL "" FORCE)
-
-      # Namespaced alias for using build directory directly
-      string(REPLACE "sundials_" "" _export_name "${target}")
-      add_library(SUNDIALS::${_export_name} ALIAS ${target}${_SHARED_LIB_SUFFIX})
     endif()
   else()
     add_library(${target}_obj ALIAS ${target}_obj${_STATIC_LIB_SUFFIX})
     if(NOT sundials_add_library_OBJECT_LIB_ONLY)
       add_library(${target} ALIAS ${target}${_STATIC_LIB_SUFFIX})
       set(_SUNDIALS_ALIAS_TARGETS "${target}->${target}${_STATIC_LIB_SUFFIX};${_SUNDIALS_ALIAS_TARGETS}" CACHE INTERNAL "" FORCE)
-
-      # Namespaced alias for using build directory directly
-      string(REPLACE "sundials_" "" _export_name "${target}")
-      add_library(SUNDIALS::${_export_name} ALIAS ${target}${_STATIC_LIB_SUFFIX})
     endif()
   endif()
 

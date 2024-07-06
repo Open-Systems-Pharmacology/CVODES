@@ -2,7 +2,7 @@
 ! Programmer(s): David J. Gardner, and Cody J. Balos @ LLNL
 ! ------------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -28,7 +28,6 @@ module ode_mod
 
   !======= Inclusions ===========
   use, intrinsic :: iso_c_binding
-  use fsundials_core_mod
 
   !======= Declarations =========
   implicit none
@@ -55,6 +54,7 @@ contains
 
     !======= Inclusions ===========
     use, intrinsic :: iso_c_binding
+    use fsundials_nvector_mod
 
     !======= Declarations =========
     implicit none
@@ -91,9 +91,11 @@ program main
 
   !======= Inclusions ===========
   use, intrinsic :: iso_c_binding
-  use fsundials_core_mod            ! Access SUNDIALS core types, data structures, etc.
+
   use fcvodes_mod                   ! Fortran interface to CVODES
+  use fsundials_nvector_mod         ! Fortran interface to generic N_Vector
   use fnvector_serial_mod           ! Fortran interface to serial N_Vector
+  use fsundials_nonlinearsolver_mod ! Fortran interface to generic SUNNonlinearSolver
   use fsunnonlinsol_fixedpoint_mod  ! Fortran interface to fixed point SUNNonlinearSolver
   use ode_mod                   ! ODE functions and problem parameters
 
@@ -111,7 +113,6 @@ program main
   integer(c_int) :: nout        ! number of outputs
   integer(c_int) :: outstep     ! output loop counter
   type(c_ptr)    :: cvodes_mem  ! CVODES memory
-  type(c_ptr)    :: ctx         ! SUNDIALS simulation context
 
   type(N_Vector), pointer           :: sunvec_y ! sundials vector
   type(SUNNonlinearSolver), pointer :: sunnls   ! sundials fixed-point nonlinear solver
@@ -120,8 +121,6 @@ program main
   real(c_double) :: yvec(neq)
 
   !======= Internals ============
-
-  ierr = FSUNContext_Create(SUN_COMM_NULL, ctx)
 
   ! initialize ODE
   tstart = 0.0d0
@@ -135,14 +134,14 @@ program main
   yvec(1) = 0.0d0
 
   ! create SUNDIALS N_Vector
-  sunvec_y => FN_VMake_Serial(neq, yvec, ctx)
+  sunvec_y => FN_VMake_Serial(neq, yvec)
   if (.not. associated(sunvec_y)) then
      print *, 'ERROR: sunvec = NULL'
      stop 1
   end if
 
   ! create CVode memory
-  cvodes_mem = FCVodeCreate(CV_ADAMS, ctx)
+  cvodes_mem = FCVodeCreate(CV_ADAMS)
   if (.not. c_associated(cvodes_mem)) then
      print *, 'ERROR: cvodes_mem = NULL'
      stop 1
@@ -166,7 +165,7 @@ program main
   end if
 
   ! create fixed point nonlinear solver object
-  sunnls => FSUNNonlinSol_FixedPoint(sunvec_y, 0, ctx)
+  sunnls => FSUNNonlinSol_FixedPoint(sunvec_y, 0)
   if (.not. associated(sunnls)) then
      print *,'ERROR: sunnls = NULL'
      stop 1
@@ -208,7 +207,6 @@ program main
   call FCVodeFree(cvodes_mem)
   ierr = FSUNNonLinSolFree(sunnls)
   call FN_VDestroy(sunvec_y)
-  ierr = FSUNContext_Free(ctx)
 
 end program main
 

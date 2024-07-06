@@ -2,7 +2,7 @@
 # Programmer(s): David J. Gardner @ LLNL
 # ------------------------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -40,7 +40,7 @@ foreach(example_tuple ${sunlinsols_onemkldense_examples})
   if (NOT TARGET ${example_target})
 
     # example source files
-    add_executable(${example_target} ${example})
+    add_executable(${example_target} ${example} ../test_sunlinsol.c ../test_sunlinsol.h)
 
     # folder for IDEs
     set_target_properties(${example_target} PROPERTIES FOLDER "Examples")
@@ -48,11 +48,10 @@ foreach(example_tuple ${sunlinsols_onemkldense_examples})
     # libraries to link against
     target_link_libraries(${example_target}
       PRIVATE
-      test_sunlinsol_obj
       sundials_nvecsycl
       sundials_sunlinsolonemkldense
       MKL::MKL_DPCPP
-      ${EXE_EXTRA_LINK_LIBS}
+      ${EXTRA_LINK_LIBS}
       )
 
   endif()
@@ -77,8 +76,6 @@ if(EXAMPLES_INSTALL)
 
   sundials_install_examples(sunlinsol_onemkl sunlinsols_onemkldense_examples
     EXAMPLES_DEPENDENCIES
-      test_sunlinsol.c
-    EXTRA_FILES
       ${SUNDIALS_SOURCE_DIR}/examples/sunlinsol/test_sunlinsol.c
       ${SUNDIALS_SOURCE_DIR}/examples/sunlinsol/test_sunlinsol.h
     CMAKE_TEMPLATE

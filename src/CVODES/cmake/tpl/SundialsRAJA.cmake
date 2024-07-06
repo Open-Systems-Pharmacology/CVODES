@@ -2,7 +2,7 @@
 # Programmer(s): Cody J. Balos @ LLNL
 # -----------------------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -76,20 +76,6 @@ endforeach()
 message(STATUS "RAJA Version:  ${RAJA_VERSION_MAJOR}.${RAJA_VERSION_MINOR}.${RAJA_VERSION_PATCHLEVEL}")
 message(STATUS "RAJA Backends: ${RAJA_BACKENDS}")
 
-set(RAJA_NEEDS_THREADS OFF)
-if("${RAJA_BACKENDS}" MATCHES "CUDA")
-  set(RAJA_NEEDS_THREADS ON)
-  if(NOT TARGET Threads::Threads)
-    find_package(Threads)
-  endif()
-  # The RAJA target links to camp which links to a target 'cuda_runtime'
-  # which is normally provided by BLT. Since we do not use BLT, we instead
-  # create the target here and tell it to link to CUDA::cudart.
-  if(NOT TARGET cuda_runtime)
-    add_library(cuda_runtime INTERFACE IMPORTED)
-    target_link_libraries(cuda_runtime INTERFACE CUDA::cudart)
-  endif()
-endif()
 # -----------------------------------------------------------------------------
 # Section 4: Test the TPL
 # -----------------------------------------------------------------------------

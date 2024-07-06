@@ -2,7 +2,7 @@
 # Programmer(s): Cody J. Balos @ LLNL
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -23,8 +23,7 @@ sundials_option(EXAMPLES_ENABLE_C BOOL "Build SUNDIALS C examples" ON)
 # Some TPLs only have C++ examples. Default the C++ examples to ON if any of
 # these are enabled on the initial configuration pass.
 if (ENABLE_TRILINOS OR ENABLE_SUPERLUDIST OR ENABLE_XBRAID OR ENABLE_HIP OR
-    ENABLE_MAGMA OR ENABLE_SYCL OR ENABLE_ONEMKL OR ENABLE_RAJA OR ENABLE_GINKGO OR
-    ENABLE_KOKKOS)
+    ENABLE_MAGMA OR ENABLE_SYCL OR ENABLE_ONEMKL OR ENABLE_RAJA)
   sundials_option(EXAMPLES_ENABLE_CXX BOOL "Build SUNDIALS C++ examples" ON)
 else()
   sundials_option(EXAMPLES_ENABLE_CXX BOOL "Build SUNDIALS C++ examples" OFF)
@@ -33,6 +32,38 @@ endif()
 # -----------------------------------------------------------------------------
 # Options for Fortran Examples
 # -----------------------------------------------------------------------------
+
+set(DOCSTR "Build SUNDIALS FORTRAN 77 examples")
+if(BUILD_FORTRAN77_INTERFACE)
+
+  sundials_option(EXAMPLES_ENABLE_F77 BOOL "${DOCSTR}" ON)
+
+  # Fortran 77 examples do not support single or extended precision
+  if(EXAMPLES_ENABLE_F77 AND (SUNDIALS_PRECISION MATCHES "EXTENDED" OR SUNDIALS_PRECISION MATCHES "SINGLE"))
+    print_warning("F77 examples are not compatible with ${SUNDIALS_PRECISION} precision. "
+                  "Setting EXAMPLES_ENABLE_F77 to OFF.")
+    force_variable(EXAMPLES_ENABLE_F77 BOOL "${DOCSTR}" OFF)
+  endif()
+
+  sundials_option(EXAMPLES_ENABLE_F90 BOOL "Build SUNDIALS FORTRAN 90 examples" ON)
+
+  # Fortran 90 examples do not support extended precision
+  if(EXAMPLES_ENABLE_F90 AND (SUNDIALS_PRECISION MATCHES "EXTENDED"))
+    print_warning("F90 examples are not compatible with ${SUNDIALS_PRECISION} precision. "
+                  "Setting EXAMPLES_ENABLE_F90 to OFF.")
+    force_variable(EXAMPLES_ENABLE_F90 BOOL "${DOCSTR}" OFF)
+  endif()
+
+else()
+
+  # set back to OFF (in case it was ON)
+  if(EXAMPLES_ENABLE_F77)
+    print_warning("EXAMPLES_ENABLE_F77 is ON but BUILD_FORTRAN77_INTERFACE is OFF. "
+                  "Setting EXAMPLES_ENABLE_F77 to OFF.")
+    force_variable(EXAMPLES_ENABLE_F77 BOOL "${DOCSTR}" OFF)
+  endif()
+
+endif()
 
 # F2003 examples (on by default) are an option only if the
 # Fortran 2003 interface is enabled.
@@ -71,7 +102,9 @@ endif()
 # -----------------------------------------------------------------------------
 
 sundials_option(EXAMPLES_ENABLE_CUDA BOOL "Build SUNDIALS CUDA examples" ON
-                DEPENDS_ON ENABLE_CUDA)
+                DEPENDS_ON ENABLE_CUDA
+                SHOW_IF ENABLE_CUDA)
+
 
 # -----------------------------------------------------------------------------
 # Options for installing examples
@@ -97,6 +130,8 @@ endif()
 if(EXAMPLES_ENABLE_C OR
    EXAMPLES_ENABLE_CXX OR
    EXAMPLES_ENABLE_CUDA OR
+   EXAMPLES_ENABLE_F77 OR
+   EXAMPLES_ENABLE_F90 OR
    EXAMPLES_ENABLE_F2003)
   set(_BUILD_EXAMPLES TRUE CACHE INTERNAL "")
 else()

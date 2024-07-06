@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,7 +17,6 @@
 
 module test_fsunlinsol_klu
   use, intrinsic :: iso_c_binding
-  use test_utilities
   implicit none
 
   integer(C_LONG), private, parameter :: N = 300
@@ -26,9 +25,9 @@ contains
 
   integer(C_INT) function unit_tests() result(fails)
     use, intrinsic :: iso_c_binding
-
-
-
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
+    use fsundials_linearsolver_mod
     use fnvector_serial_mod
     use fsunmatrix_dense_mod
     use fsunmatrix_sparse_mod
@@ -40,7 +39,7 @@ contains
     type(SUNLinearSolver), pointer :: LS                ! test linear solver
     type(SUNMatrix),       pointer :: A, D              ! test matrices
     type(N_Vector),        pointer :: x, b              ! test vectors
-    real(C_DOUBLE),        pointer :: colj(:)           ! matrix column data
+    real(C_DOUBLE),        pointer :: colj(:), colIj(:) ! matrix column data
     real(C_DOUBLE),        pointer :: xdata(:)          ! x vector data
     real(C_DOUBLE)                 :: tmpr              ! temporary real value
     integer(C_LONG)                :: j, k, i
@@ -48,9 +47,9 @@ contains
 
     fails = 0
 
-    D => FSUNDenseMatrix(N, N, sunctx)
-    x => FN_VNew_Serial(N, sunctx)
-    b => FN_VNew_Serial(N, sunctx)
+    D => FSUNDenseMatrix(N, N)
+    x => FN_VNew_Serial(N)
+    b => FN_VNew_Serial(N)
 
     ! fill A matrix with uniform random data in [0, 1/N)
     do k=1, 5*N
@@ -93,12 +92,12 @@ contains
     end if
 
     ! create KLU linear solver
-    LS => FSUNLinSol_KLU(x, A, sunctx)
+    LS => FSUNLinSol_KLU(x, A)
 
     ! run tests
     fails = fails + Test_FSUNLinSolInitialize(LS, 0)
     fails = fails + Test_FSUNLinSolSetup(LS, A, 0)
-    fails = fails + Test_FSUNLinSolSolve(LS, A, x, b, 1000*SUN_UNIT_ROUNDOFF, 0)
+    fails = fails + Test_FSUNLinSolSolve(LS, A, x, b, 1000*UNIT_ROUNDOFF, 0)
 
     fails = fails + Test_FSUNLinSolGetType(LS, SUNLINEARSOLVER_DIRECT, 0)
     fails = fails + Test_FSUNLinSolLastFlag(LS, 0)
@@ -116,7 +115,7 @@ end module
 
 integer(C_INT) function check_vector(X, Y, tol) result(failure)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use test_utilities
 
   implicit none
@@ -166,8 +165,6 @@ program main
   !============== Introduction =============
   print *, 'KLU SUNLinearSolver Fortran 2003 interface test'
 
-  call Test_Init(SUN_COMM_NULL)
-
   fails = unit_tests()
   if (fails /= 0) then
     print *, 'FAILURE: n unit tests failed'
@@ -175,7 +172,4 @@ program main
   else
     print *,'SUCCESS: all unit tests passed'
   end if
-
-  call Test_Finalize()
-
 end program main

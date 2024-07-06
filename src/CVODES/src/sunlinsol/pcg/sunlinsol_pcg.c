@@ -3,7 +3,7 @@
  * Based on sundials_pcg.c code, written by Daniel Reynolds @ SMU
  * -----------------------------------------------------------------
  * SUNDIALS Copyright Start
- * Copyright (c) 2002-2024, Lawrence Livermore National Security
+ * Copyright (c) 2002-2021, Lawrence Livermore National Security
  * and Southern Methodist University.
  * All rights reserved.
  *
@@ -18,14 +18,14 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sundials/priv/sundials_errors_impl.h>
-#include <sundials/sundials_math.h>
+
 #include <sunlinsol/sunlinsol_pcg.h>
+#include <sundials/sundials_math.h>
 
-#include "sundials_logger_impl.h"
+#include "sundials_debug.h"
 
-#define ZERO SUN_RCONST(0.0)
-#define ONE  SUN_RCONST(1.0)
+#define ZERO RCONST(0.0)
+#define ONE  RCONST(1.0)
 
 /*
  * -----------------------------------------------------------------
@@ -33,9 +33,24 @@
  * -----------------------------------------------------------------
  */
 
-#define PCG_CONTENT(S) ((SUNLinearSolverContent_PCG)(S->content))
-#define PRETYPE(S)     (PCG_CONTENT(S)->pretype)
-#define LASTFLAG(S)    (PCG_CONTENT(S)->last_flag)
+#define PCG_CONTENT(S)  ( (SUNLinearSolverContent_PCG)(S->content) )
+#define PRETYPE(S)      ( PCG_CONTENT(S)->pretype )
+#define LASTFLAG(S)     ( PCG_CONTENT(S)->last_flag )
+
+/*
+ * -----------------------------------------------------------------
+ * deprecated wrapper functions
+ * -----------------------------------------------------------------
+ */
+
+SUNLinearSolver SUNPCG(N_Vector y, int pretype, int maxl)
+{ return(SUNLinSol_PCG(y, pretype, maxl)); }
+
+int SUNPCGSetPrecType(SUNLinearSolver S, int pretype)
+{ return(SUNLinSol_PCGSetPrecType(S, pretype)); }
+
+int SUNPCGSetMaxl(SUNLinearSolver S, int maxl)
+{ return(SUNLinSol_PCGSetMaxl(S, maxl)); }
 
 /*
  * -----------------------------------------------------------------
@@ -47,24 +62,22 @@
  * Function to create a new PCG linear solver
  */
 
-SUNLinearSolver SUNLinSol_PCG(N_Vector y, int pretype, int maxl, SUNContext sunctx)
+SUNLinearSolver SUNLinSol_PCG(N_Vector y, int pretype, int maxl)
 {
-  SUNFunctionBegin(sunctx);
   SUNLinearSolver S;
   SUNLinearSolverContent_PCG content;
 
   /* check for legal pretype and maxl values; if illegal use defaults */
-  if ((pretype != SUN_PREC_NONE) && (pretype != SUN_PREC_LEFT) &&
-      (pretype != SUN_PREC_RIGHT) && (pretype != SUN_PREC_BOTH))
-  {
-    pretype = SUN_PREC_NONE;
-  }
-  if (maxl <= 0) { maxl = SUNPCG_MAXL_DEFAULT; }
+  if ((pretype != PREC_NONE)  && (pretype != PREC_LEFT) &&
+      (pretype != PREC_RIGHT) && (pretype != PREC_BOTH))
+    pretype = PREC_NONE;
+  if (maxl <= 0)
+    maxl = SUNPCG_MAXL_DEFAULT;
 
   /* Create linear solver */
   S = NULL;
-  S = SUNLinSolNewEmpty(sunctx);
-  SUNCheckLastErrNull();
+  S = SUNLinSolNewEmpty();
+  if (S == NULL) return(NULL);
 
   /* Attach operations */
   S->ops->gettype           = SUNLinSolGetType_PCG;
@@ -85,76 +98,88 @@ SUNLinearSolver SUNLinSol_PCG(N_Vector y, int pretype, int maxl, SUNContext sunc
 
   /* Create content */
   content = NULL;
-  content = (SUNLinearSolverContent_PCG)malloc(sizeof *content);
-  SUNAssertNull(content, SUN_ERR_MALLOC_FAIL);
+  content = (SUNLinearSolverContent_PCG) malloc(sizeof *content);
+  if (content == NULL) { SUNLinSolFree(S); return(NULL); }
 
   /* Attach content  */
   S->content = content;
 
   /* Fill content */
-  content->last_flag = 0;
-  content->maxl      = maxl;
-  content->pretype   = pretype;
-  content->zeroguess = SUNFALSE;
-  content->numiters  = 0;
-  content->resnorm   = ZERO;
-  content->r         = NULL;
-  content->p         = NULL;
-  content->z         = NULL;
-  content->Ap        = NULL;
-  content->s         = NULL;
-  content->ATimes    = NULL;
-  content->ATData    = NULL;
-  content->Psetup    = NULL;
-  content->Psolve    = NULL;
-  content->PData     = NULL;
+  content->last_flag   = 0;
+  content->maxl        = maxl;
+  content->pretype     = pretype;
+  content->zeroguess   = SUNFALSE;
+  content->numiters    = 0;
+  content->resnorm     = ZERO;
+  content->r           = NULL;
+  content->p           = NULL;
+  content->z           = NULL;
+  content->Ap          = NULL;
+  content->s           = NULL;
+  content->ATimes      = NULL;
+  content->ATData      = NULL;
+  content->Psetup      = NULL;
+  content->Psolve      = NULL;
+  content->PData       = NULL;
+  content->print_level = 0;
+  content->info_file   = stdout;
 
   /* Allocate content */
   content->r = N_VClone(y);
-  SUNCheckLastErrNull();
+  if (content->r == NULL) { SUNLinSolFree(S); return NULL; }
 
   content->p = N_VClone(y);
-  SUNCheckLastErrNull();
+  if (content->p == NULL) { SUNLinSolFree(S); return NULL; }
 
   content->z = N_VClone(y);
-  SUNCheckLastErrNull();
+  if (content->z == NULL) { SUNLinSolFree(S); return NULL; }
 
   content->Ap = N_VClone(y);
-  SUNCheckLastErrNull();
+  if (content->Ap == NULL) { SUNLinSolFree(S); return NULL; }
 
-  return (S);
+  return(S);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Function to set the type of preconditioning for PCG to use
  */
 
-SUNErrCode SUNLinSol_PCGSetPrecType(SUNLinearSolver S, int pretype)
+int SUNLinSol_PCGSetPrecType(SUNLinearSolver S, int pretype)
 {
-  SUNFunctionBegin(S->sunctx);
   /* Check for legal pretype */
-  SUNAssert((pretype == SUN_PREC_NONE) || (pretype == SUN_PREC_LEFT) ||
-              (pretype == SUN_PREC_RIGHT) || (pretype == SUN_PREC_BOTH),
-            SUN_ERR_ARG_OUTOFRANGE);
+  if ((pretype != PREC_NONE)  && (pretype != PREC_LEFT) &&
+      (pretype != PREC_RIGHT) && (pretype != PREC_BOTH)) {
+    return(SUNLS_ILL_INPUT);
+  }
+
+  /* Check for non-NULL SUNLinearSolver */
+  if (S == NULL) return(SUNLS_MEM_NULL);
 
   /* Set pretype */
   PRETYPE(S) = pretype;
-  return SUN_SUCCESS;
+  return(SUNLS_SUCCESS);
 }
+
 
 /* ----------------------------------------------------------------------------
  * Function to set the maximum number of iterations for PCG to use
  */
 
-SUNErrCode SUNLinSol_PCGSetMaxl(SUNLinearSolver S, int maxl)
+int SUNLinSol_PCGSetMaxl(SUNLinearSolver S, int maxl)
 {
+  /* Check for non-NULL SUNLinearSolver */
+  if (S == NULL) return(SUNLS_MEM_NULL);
+
   /* Check for legal number of iters */
-  if (maxl <= 0) { maxl = SUNPCG_MAXL_DEFAULT; }
+  if (maxl <= 0)
+    maxl = SUNPCG_MAXL_DEFAULT;
 
   /* Set max iters */
   PCG_CONTENT(S)->maxl = maxl;
-  return SUN_SUCCESS;
+  return(SUNLS_SUCCESS);
 }
+
 
 /*
  * -----------------------------------------------------------------
@@ -164,342 +189,341 @@ SUNErrCode SUNLinSol_PCGSetMaxl(SUNLinearSolver S, int maxl)
 
 SUNLinearSolver_Type SUNLinSolGetType_PCG(SUNLinearSolver S)
 {
-  return (SUNLINEARSOLVER_ITERATIVE);
+  return(SUNLINEARSOLVER_ITERATIVE);
 }
+
 
 SUNLinearSolver_ID SUNLinSolGetID_PCG(SUNLinearSolver S)
 {
-  return (SUNLINEARSOLVER_PCG);
+  return(SUNLINEARSOLVER_PCG);
 }
 
-SUNErrCode SUNLinSolInitialize_PCG(SUNLinearSolver S)
+
+int SUNLinSolInitialize_PCG(SUNLinearSolver S)
 {
-  SUNFunctionBegin(S->sunctx);
-  if (PCG_CONTENT(S)->maxl <= 0) { PCG_CONTENT(S)->maxl = SUNPCG_MAXL_DEFAULT; }
+  /* ensure valid options */
+  if (S == NULL) return(SUNLS_MEM_NULL);
 
-  SUNAssert(PCG_CONTENT(S)->ATimes, SUN_ERR_ARG_CORRUPT);
+  if (PCG_CONTENT(S)->maxl <= 0)
+    PCG_CONTENT(S)->maxl = SUNPCG_MAXL_DEFAULT;
 
-  if ((PRETYPE(S) != SUN_PREC_LEFT) && (PRETYPE(S) != SUN_PREC_RIGHT) &&
-      (PRETYPE(S) != SUN_PREC_BOTH))
-  {
-    PRETYPE(S) = SUN_PREC_NONE;
+  if (PCG_CONTENT(S)->ATimes == NULL) {
+    LASTFLAG(S) = SUNLS_ATIMES_NULL;
+    return(LASTFLAG(S));
   }
 
-  SUNAssert((PCG_CONTENT(S)->pretype == SUN_PREC_NONE) ||
-              (PCG_CONTENT(S)->Psolve != NULL),
-            SUN_ERR_ARG_CORRUPT);
+  if ( (PRETYPE(S) != PREC_LEFT) &&
+       (PRETYPE(S) != PREC_RIGHT) &&
+       (PRETYPE(S) != PREC_BOTH) )
+    PRETYPE(S) = PREC_NONE;
+
+  if ((PRETYPE(S) != PREC_NONE) && (PCG_CONTENT(S)->Psolve == NULL)) {
+    LASTFLAG(S) = SUNLS_PSOLVE_NULL;
+    return(LASTFLAG(S));
+  }
 
   /* no additional memory to allocate */
 
-  return SUN_SUCCESS;
+  /* return with success */
+  LASTFLAG(S) = SUNLS_SUCCESS;
+  return(LASTFLAG(S));
 }
 
-SUNErrCode SUNLinSolSetATimes_PCG(SUNLinearSolver S, void* ATData,
-                                  SUNATimesFn ATimes)
+
+int SUNLinSolSetATimes_PCG(SUNLinearSolver S, void* ATData,
+                           ATimesFn ATimes)
 {
   /* set function pointers to integrator-supplied ATimes routine
      and data, and return with success */
+  if (S == NULL) return(SUNLS_MEM_NULL);
   PCG_CONTENT(S)->ATimes = ATimes;
   PCG_CONTENT(S)->ATData = ATData;
-  return SUN_SUCCESS;
+  LASTFLAG(S) = SUNLS_SUCCESS;
+  return(LASTFLAG(S));
 }
 
-SUNErrCode SUNLinSolSetPreconditioner_PCG(SUNLinearSolver S, void* PData,
-                                          SUNPSetupFn Psetup, SUNPSolveFn Psolve)
+
+int SUNLinSolSetPreconditioner_PCG(SUNLinearSolver S, void* PData,
+                                   PSetupFn Psetup, PSolveFn Psolve)
 {
   /* set function pointers to integrator-supplied Psetup and PSolve
      routines and data, and return with success */
+  if (S == NULL) return(SUNLS_MEM_NULL);
   PCG_CONTENT(S)->Psetup = Psetup;
   PCG_CONTENT(S)->Psolve = Psolve;
-  PCG_CONTENT(S)->PData  = PData;
-  return SUN_SUCCESS;
+  PCG_CONTENT(S)->PData = PData;
+  LASTFLAG(S) = SUNLS_SUCCESS;
+  return(LASTFLAG(S));
 }
 
-SUNErrCode SUNLinSolSetScalingVectors_PCG(SUNLinearSolver S, N_Vector s,
-                                          N_Vector nul)
+
+int SUNLinSolSetScalingVectors_PCG(SUNLinearSolver S, N_Vector s,
+                                   N_Vector nul)
 {
   /* set N_Vector pointer to integrator-supplied scaling vector
      (only use the first one), and return with success */
+  if (S == NULL) return(SUNLS_MEM_NULL);
   PCG_CONTENT(S)->s = s;
-  return SUN_SUCCESS;
+  LASTFLAG(S) = SUNLS_SUCCESS;
+  return(LASTFLAG(S));
 }
 
-SUNErrCode SUNLinSolSetZeroGuess_PCG(SUNLinearSolver S, sunbooleantype onoff)
+
+int SUNLinSolSetZeroGuess_PCG(SUNLinearSolver S, booleantype onoff)
 {
   /* set flag indicating a zero initial guess */
+  if (S == NULL) return(SUNLS_MEM_NULL);
   PCG_CONTENT(S)->zeroguess = onoff;
-  return SUN_SUCCESS;
+  LASTFLAG(S) = SUNLS_SUCCESS;
+  return(LASTFLAG(S));
 }
+
 
 int SUNLinSolSetup_PCG(SUNLinearSolver S, SUNMatrix nul)
 {
-  SUNFunctionBegin(S->sunctx);
-
-  int status;
-  SUNPSetupFn Psetup;
+  int ier;
+  PSetupFn Psetup;
   void* PData;
 
   /* Set shortcuts to PCG memory structures */
+  if (S == NULL) return(SUNLS_MEM_NULL);
   Psetup = PCG_CONTENT(S)->Psetup;
-  PData  = PCG_CONTENT(S)->PData;
+  PData = PCG_CONTENT(S)->PData;
 
   /* no solver-specific setup is required, but if user-supplied
      Psetup routine exists, call that here */
-  if (Psetup != NULL)
-  {
-    status = Psetup(PData);
-    if (status != 0)
-    {
-      LASTFLAG(S) = (status < 0) ? SUNLS_PSET_FAIL_UNREC : SUNLS_PSET_FAIL_REC;
-      return (LASTFLAG(S));
+  if (Psetup != NULL) {
+    ier = Psetup(PData);
+    if (ier != 0) {
+      LASTFLAG(S) = (ier < 0) ?
+        SUNLS_PSET_FAIL_UNREC : SUNLS_PSET_FAIL_REC;
+      return(LASTFLAG(S));
     }
   }
 
   /* return with success */
-  LASTFLAG(S) = SUN_SUCCESS;
-  return SUN_SUCCESS;
+  LASTFLAG(S) = SUNLS_SUCCESS;
+  return(LASTFLAG(S));
 }
 
-int SUNLinSolSolve_PCG(SUNLinearSolver S, SUNMatrix nul, N_Vector x, N_Vector b,
-                       sunrealtype delta)
+
+int SUNLinSolSolve_PCG(SUNLinearSolver S, SUNMatrix nul, N_Vector x,
+                       N_Vector b, realtype delta)
 {
-  SUNFunctionBegin(S->sunctx);
-
   /* local data and shortcut variables */
-  sunrealtype alpha, beta, r0_norm, rho, rz, rz_old;
+  realtype alpha, beta, r0_norm, rho, rz, rz_old;
   N_Vector r, p, z, Ap, w;
-  sunbooleantype UsePrec, UseScaling, converged;
-  sunbooleantype* zeroguess;
-  int l, l_max, pretype;
+  booleantype UsePrec, UseScaling, converged;
+  booleantype *zeroguess;
+  int l, l_max, pretype, ier;
   void *A_data, *P_data;
-  SUNATimesFn atimes;
-  SUNPSolveFn psolve;
-  sunrealtype* res_norm;
-  int* nli;
-  int status;
+  ATimesFn atimes;
+  PSolveFn psolve;
+  realtype *res_norm;
+  int *nli;
 
-  /* Make local shorcuts to solver variables. */
-  l_max     = PCG_CONTENT(S)->maxl;
-  r         = PCG_CONTENT(S)->r;
-  p         = PCG_CONTENT(S)->p;
-  z         = PCG_CONTENT(S)->z;
-  Ap        = PCG_CONTENT(S)->Ap;
-  w         = PCG_CONTENT(S)->s;
-  A_data    = PCG_CONTENT(S)->ATData;
-  P_data    = PCG_CONTENT(S)->PData;
-  atimes    = PCG_CONTENT(S)->ATimes;
-  psolve    = PCG_CONTENT(S)->Psolve;
-  pretype   = PCG_CONTENT(S)->pretype;
-  zeroguess = &(PCG_CONTENT(S)->zeroguess);
-  nli       = &(PCG_CONTENT(S)->numiters);
-  res_norm  = &(PCG_CONTENT(S)->resnorm);
+   /* Make local shorcuts to solver variables. */
+  if (S == NULL) return(SUNLS_MEM_NULL);
+  l_max        = PCG_CONTENT(S)->maxl;
+  r            = PCG_CONTENT(S)->r;
+  p            = PCG_CONTENT(S)->p;
+  z            = PCG_CONTENT(S)->z;
+  Ap           = PCG_CONTENT(S)->Ap;
+  w            = PCG_CONTENT(S)->s;
+  A_data       = PCG_CONTENT(S)->ATData;
+  P_data       = PCG_CONTENT(S)->PData;
+  atimes       = PCG_CONTENT(S)->ATimes;
+  psolve       = PCG_CONTENT(S)->Psolve;
+  pretype      = PCG_CONTENT(S)->pretype;
+  zeroguess    = &(PCG_CONTENT(S)->zeroguess);
+  nli          = &(PCG_CONTENT(S)->numiters);
+  res_norm     = &(PCG_CONTENT(S)->resnorm);
 
   /* Initialize counters and convergence flag */
-  *nli      = 0;
+  *nli = 0;
   converged = SUNFALSE;
 
-  /* set sunbooleantype flags for internal solver options */
-  UsePrec    = ((pretype == SUN_PREC_BOTH) || (pretype == SUN_PREC_LEFT) ||
-             (pretype == SUN_PREC_RIGHT));
+  /* set booleantype flags for internal solver options */
+  UsePrec = ( (pretype == PREC_BOTH) ||
+              (pretype == PREC_LEFT) ||
+              (pretype == PREC_RIGHT) );
   UseScaling = (w != NULL);
 
+#ifdef SUNDIALS_BUILD_WITH_MONITORING
+  if (PCG_CONTENT(S)->print_level && PCG_CONTENT(S)->info_file)
+    fprintf(PCG_CONTENT(S)->info_file, "SUNLINSOL_PCG:\n");
+#endif
+
   /* Check if Atimes function has been set */
-  SUNAssert(atimes, SUN_ERR_ARG_CORRUPT);
+  if (atimes == NULL) {
+    *zeroguess  = SUNFALSE;
+    LASTFLAG(S) = SUNLS_ATIMES_NULL;
+    return(LASTFLAG(S));
+  }
 
   /* If preconditioning, check if psolve has been set */
-  SUNAssert(!UsePrec || psolve, SUN_ERR_ARG_CORRUPT);
+  if (UsePrec && psolve == NULL) {
+    *zeroguess  = SUNFALSE;
+    LASTFLAG(S) = SUNLS_PSOLVE_NULL;
+    return(LASTFLAG(S));
+  }
 
   /* Set r to initial residual r_0 = b - A*x_0 */
-  if (*zeroguess)
-  {
+  if (*zeroguess) {
     N_VScale(ONE, b, r);
-    SUNCheckLastErr();
-  }
-  else
-  {
-    status = atimes(A_data, x, r);
-    if (status != 0)
-    {
+  } else {
+    ier = atimes(A_data, x, r);
+    if (ier != 0) {
       *zeroguess  = SUNFALSE;
-      LASTFLAG(S) = (status < 0) ? SUNLS_ATIMES_FAIL_UNREC
-                                 : SUNLS_ATIMES_FAIL_REC;
-      return (LASTFLAG(S));
+      LASTFLAG(S) = (ier < 0) ?
+        SUNLS_ATIMES_FAIL_UNREC : SUNLS_ATIMES_FAIL_REC;
+      return(LASTFLAG(S));
     }
     N_VLinearSum(ONE, b, -ONE, r, r);
-    SUNCheckLastErr();
   }
 
   /* Set rho to scaled L2 norm of r, and return if small */
-  if (UseScaling)
-  {
-    N_VProd(r, w, Ap);
-    SUNCheckLastErr();
-  }
-  else
-  {
-    N_VScale(ONE, r, Ap);
-    SUNCheckLastErr();
-  }
-  rho = N_VDotProd(Ap, Ap);
-  SUNCheckLastErr();
-  *res_norm = r0_norm = rho = SUNRsqrt(rho);
+  if (UseScaling)  N_VProd(r, w, Ap);
+  else N_VScale(ONE, r, Ap);
+  *res_norm = r0_norm = rho = SUNRsqrt(N_VDotProd(Ap, Ap));
 
-#if SUNDIALS_LOGGING_LEVEL >= SUNDIALS_LOGGING_INFO
-  SUNLogger_QueueMsg(S->sunctx->logger, SUN_LOGLEVEL_INFO, "SUNLinSolSolve_PCG",
-                     "initial-residual", "nli = %li, resnorm = %.16g",
-                     (long int)0, *res_norm);
+#ifdef SUNDIALS_BUILD_WITH_MONITORING
+    /* print initial residual */
+    if (PCG_CONTENT(S)->print_level && PCG_CONTENT(S)->info_file)
+    {
+      fprintf(PCG_CONTENT(S)->info_file,
+              SUNLS_MSG_RESIDUAL,
+              (long int) 0, *res_norm);
+    }
 #endif
 
-  if (rho <= delta)
-  {
+  if (rho <= delta) {
     *zeroguess  = SUNFALSE;
-    LASTFLAG(S) = SUN_SUCCESS;
-    return (LASTFLAG(S));
+    LASTFLAG(S) = SUNLS_SUCCESS;
+    return(LASTFLAG(S));
   }
 
   /* Apply preconditioner and b-scaling to r = r_0 */
-  if (UsePrec)
-  {
-    status = psolve(P_data, r, z, delta, SUN_PREC_LEFT); /* z = P^{-1}r */
-    if (status != 0)
-    {
+  if (UsePrec) {
+    ier = psolve(P_data, r, z, delta, PREC_LEFT);   /* z = P^{-1}r */
+    if (ier != 0) {
       *zeroguess  = SUNFALSE;
-      LASTFLAG(S) = (status < 0) ? SUNLS_PSOLVE_FAIL_UNREC
-                                 : SUNLS_PSOLVE_FAIL_REC;
-      return (LASTFLAG(S));
+      LASTFLAG(S) = (ier < 0) ?
+        SUNLS_PSOLVE_FAIL_UNREC : SUNLS_PSOLVE_FAIL_REC;
+      return(LASTFLAG(S));
     }
   }
-  else
-  {
-    N_VScale(ONE, r, z);
-    SUNCheckLastErr();
-  }
+  else N_VScale(ONE, r, z);
 
   /* Initialize rz to <r,z> */
   rz = N_VDotProd(r, z);
-  SUNCheckLastErr();
 
   /* Copy z to p */
   N_VScale(ONE, z, p);
-  SUNCheckLastErr();
 
   /* Begin main iteration loop */
-  for (l = 0; l < l_max; l++)
-  {
+  for(l=0; l<l_max; l++) {
+
     /* increment counter */
     (*nli)++;
 
     /* Generate Ap = A*p */
-    status = atimes(A_data, p, Ap);
-    if (status != 0)
-    {
+    ier = atimes(A_data, p, Ap);
+    if (ier != 0) {
       *zeroguess  = SUNFALSE;
-      LASTFLAG(S) = (status < 0) ? SUNLS_ATIMES_FAIL_UNREC
-                                 : SUNLS_ATIMES_FAIL_REC;
-      return (LASTFLAG(S));
+      LASTFLAG(S) = (ier < 0) ?
+        SUNLS_ATIMES_FAIL_UNREC : SUNLS_ATIMES_FAIL_REC;
+      return(LASTFLAG(S));
     }
 
     /* Calculate alpha = <r,z> / <Ap,p> */
-    alpha = N_VDotProd(Ap, p);
-    SUNCheckLastErr();
-    alpha = rz / alpha;
+    alpha = rz / N_VDotProd(Ap, p);
 
     /* Update x = x + alpha*p */
     if (l == 0 && *zeroguess)
-    {
       N_VScale(alpha, p, x);
-      SUNCheckLastErr();
-    }
     else
-    {
       N_VLinearSum(ONE, x, alpha, p, x);
-      SUNCheckLastErr();
-    }
 
     /* Update r = r - alpha*Ap */
     N_VLinearSum(ONE, r, -alpha, Ap, r);
-    SUNCheckLastErr();
 
     /* Set rho and check convergence */
-    if (UseScaling)
-    {
-      N_VProd(r, w, Ap);
-      SUNCheckLastErr();
-    }
-    else
-    {
-      N_VScale(ONE, r, Ap);
-      SUNCheckLastErr();
-    }
-    rho = N_VDotProd(Ap, Ap);
-    SUNCheckLastErr();
-    *res_norm = rho = SUNRsqrt(rho);
+    if (UseScaling)  N_VProd(r, w, Ap);
+    else N_VScale(ONE, r, Ap);
+    *res_norm = rho = SUNRsqrt(N_VDotProd(Ap, Ap));
 
-#if SUNDIALS_LOGGING_LEVEL >= SUNDIALS_LOGGING_INFO
-    SUNLogger_QueueMsg(S->sunctx->logger, SUN_LOGLEVEL_INFO,
-                       "SUNLinSolSolve_PCG", "iterate-residual",
-                       "nli = %li, resnorm = %.16g", (long int)0, *res_norm);
+#ifdef SUNDIALS_BUILD_WITH_MONITORING
+      /* print current iteration number and the residual */
+      if (PCG_CONTENT(S)->print_level && PCG_CONTENT(S)->info_file)
+      {
+        fprintf(PCG_CONTENT(S)->info_file,
+                SUNLS_MSG_RESIDUAL,
+                (long int) *nli, *res_norm);
+      }
 #endif
 
-    if (rho <= delta)
-    {
+    if (rho <= delta) {
       converged = SUNTRUE;
       break;
     }
 
     /* Exit early on last iteration */
-    if (l == l_max - 1) { break; }
+    if (l == l_max - 1) break;
 
     /* Apply preconditioner:  z = P^{-1}*r */
-    if (UsePrec)
-    {
-      status = psolve(P_data, r, z, delta, SUN_PREC_LEFT);
-      if (status != 0)
-      {
+    if (UsePrec) {
+      ier = psolve(P_data, r, z, delta, PREC_LEFT);
+      if (ier != 0) {
         *zeroguess  = SUNFALSE;
-        LASTFLAG(S) = (status < 0) ? SUNLS_PSOLVE_FAIL_UNREC
-                                   : SUNLS_PSOLVE_FAIL_REC;
-        return (LASTFLAG(S));
+        LASTFLAG(S) = (ier < 0) ?
+          SUNLS_PSOLVE_FAIL_UNREC : SUNLS_PSOLVE_FAIL_REC;
+        return(LASTFLAG(S));
       }
     }
-    else
-    {
-      N_VScale(ONE, r, z);
-      SUNCheckLastErr();
-    }
+    else N_VScale(ONE, r, z);
 
     /* update rz */
     rz_old = rz;
-    rz     = N_VDotProd(r, z);
-    SUNCheckLastErr();
+    rz = N_VDotProd(r, z);
 
     /* Calculate beta = <r,z> / <r_old,z_old> */
     beta = rz / rz_old;
 
     /* Update p = z + beta*p */
     N_VLinearSum(ONE, z, beta, p, p);
-    SUNCheckLastErr();
   }
 
   /* Main loop finished, return with result */
   *zeroguess = SUNFALSE;
-  if (converged == SUNTRUE) { LASTFLAG(S) = SUN_SUCCESS; }
-  else if (rho < r0_norm) { LASTFLAG(S) = SUNLS_RES_REDUCED; }
-  else { LASTFLAG(S) = SUNLS_CONV_FAIL; }
-  return (LASTFLAG(S));
+  if (converged == SUNTRUE) {
+    LASTFLAG(S) = SUNLS_SUCCESS;
+  } else if (rho < r0_norm) {
+    LASTFLAG(S) = SUNLS_RES_REDUCED;
+  } else {
+    LASTFLAG(S) = SUNLS_CONV_FAIL;
+  }
+  return(LASTFLAG(S));
 }
+
+
+
 
 int SUNLinSolNumIters_PCG(SUNLinearSolver S)
 {
   /* return the stored 'numiters' value */
+  if (S == NULL) return(-1);
   return (PCG_CONTENT(S)->numiters);
 }
 
-sunrealtype SUNLinSolResNorm_PCG(SUNLinearSolver S)
+
+realtype SUNLinSolResNorm_PCG(SUNLinearSolver S)
 {
   /* return the stored 'resnorm' value */
+  if (S == NULL) return(-ONE);
   return (PCG_CONTENT(S)->resnorm);
 }
+
 
 N_Vector SUNLinSolResid_PCG(SUNLinearSolver S)
 {
@@ -507,60 +531,91 @@ N_Vector SUNLinSolResid_PCG(SUNLinearSolver S)
   return (PCG_CONTENT(S)->r);
 }
 
+
 sunindextype SUNLinSolLastFlag_PCG(SUNLinearSolver S)
 {
   /* return the stored 'last_flag' value */
+  if (S == NULL) return(-1);
   return (LASTFLAG(S));
 }
 
-SUNErrCode SUNLinSolSpace_PCG(SUNLinearSolver S, long int* lenrwLS,
-                              long int* leniwLS)
+
+int SUNLinSolSpace_PCG(SUNLinearSolver S,
+                       long int *lenrwLS,
+                       long int *leniwLS)
 {
-  SUNFunctionBegin(S->sunctx);
   sunindextype liw1, lrw1;
   N_VSpace(PCG_CONTENT(S)->r, &lrw1, &liw1);
-  SUNCheckLastErr();
-  *lenrwLS = 1 + lrw1 * 4;
-  *leniwLS = 4 + liw1 * 4;
-  return SUN_SUCCESS;
+  *lenrwLS = 1 + lrw1*4;
+  *leniwLS = 4 + liw1*4;
+  return(SUNLS_SUCCESS);
 }
 
-SUNErrCode SUNLinSolFree_PCG(SUNLinearSolver S)
+int SUNLinSolFree_PCG(SUNLinearSolver S)
 {
-  if (S == NULL) { return SUN_SUCCESS; }
+  if (S == NULL) return(SUNLS_SUCCESS);
 
-  if (S->content)
-  {
+  if (S->content) {
     /* delete items from within the content structure */
-    if (PCG_CONTENT(S)->r)
-    {
+    if (PCG_CONTENT(S)->r) {
       N_VDestroy(PCG_CONTENT(S)->r);
       PCG_CONTENT(S)->r = NULL;
     }
-    if (PCG_CONTENT(S)->p)
-    {
+    if (PCG_CONTENT(S)->p) {
       N_VDestroy(PCG_CONTENT(S)->p);
       PCG_CONTENT(S)->p = NULL;
     }
-    if (PCG_CONTENT(S)->z)
-    {
+    if (PCG_CONTENT(S)->z) {
       N_VDestroy(PCG_CONTENT(S)->z);
       PCG_CONTENT(S)->z = NULL;
     }
-    if (PCG_CONTENT(S)->Ap)
-    {
+    if (PCG_CONTENT(S)->Ap) {
       N_VDestroy(PCG_CONTENT(S)->Ap);
       PCG_CONTENT(S)->Ap = NULL;
     }
-    free(S->content);
-    S->content = NULL;
+    free(S->content); S->content = NULL;
   }
-  if (S->ops)
-  {
-    free(S->ops);
-    S->ops = NULL;
-  }
-  free(S);
-  S = NULL;
-  return SUN_SUCCESS;
+  if (S->ops) { free(S->ops); S->ops = NULL; }
+  free(S); S = NULL;
+  return(SUNLS_SUCCESS);
+}
+
+
+int SUNLinSolSetInfoFile_PCG(SUNLinearSolver S,
+                             FILE* info_file)
+{
+#ifdef SUNDIALS_BUILD_WITH_MONITORING
+  /* check that the linear solver is non-null */
+  if (S == NULL)
+    return(SUNLS_MEM_NULL);
+
+  PCG_CONTENT(S)->info_file = info_file;
+
+  return(SUNLS_SUCCESS);
+#else
+  SUNDIALS_DEBUG_PRINT("ERROR in SUNLinSolSetInfoFile_PCG: SUNDIALS was not built with monitoring\n");
+  return(SUNLS_ILL_INPUT);
+#endif
+}
+
+
+int SUNLinSolSetPrintLevel_PCG(SUNLinearSolver S,
+                               int print_level)
+{
+#ifdef SUNDIALS_BUILD_WITH_MONITORING
+  /* check that the linear solver is non-null */
+  if (S == NULL)
+    return(SUNLS_MEM_NULL);
+
+  /* check for valid print level */
+  if (print_level < 0 || print_level > 1)
+    return(SUNLS_ILL_INPUT);
+
+  PCG_CONTENT(S)->print_level = print_level;
+
+  return(SUNLS_SUCCESS);
+#else
+  SUNDIALS_DEBUG_PRINT("ERROR in SUNLinSolSetPrintLevel_PCG: SUNDIALS was not built with monitoring\n");
+  return(SUNLS_ILL_INPUT);
+#endif
 }

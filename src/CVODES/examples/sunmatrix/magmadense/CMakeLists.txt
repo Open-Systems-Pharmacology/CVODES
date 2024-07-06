@@ -2,7 +2,7 @@
 # Programmer(s): Cody J. Balos @ LLNL
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -62,7 +62,7 @@ foreach(example_tuple ${sunmatrix_magmadense_examples})
         sundials_${vector}
         sundials_sunmatrixmagmadense
         SUNDIALS::MAGMA
-        ${EXE_EXTRA_LINK_LIBS}
+        ${EXTRA_LINK_LIBS}
     )
   endif()
 
@@ -85,8 +85,6 @@ if(EXAMPLES_INSTALL)
 
   sundials_install_examples(sunmatrix_magma sunmatrix_magmadense_examples
     EXAMPLES_DEPENDENCIES
-      test_sunmatrix.c
-    EXTRA_FILES
       ${SUNDIALS_SOURCE_DIR}/examples/sunmatrix/test_sunmatrix.c
       ${SUNDIALS_SOURCE_DIR}/examples/sunmatrix/test_sunmatrix.h
     CMAKE_TEMPLATE
@@ -94,6 +92,9 @@ if(EXAMPLES_INSTALL)
     SUNDIALS_TARGETS
       ${vector}
       sunmatrixmagmadense
+      MAGMA
+    EXTRA_INCLUDES
+      ${MAGMA_INCLUDE_DIR}
     DESTINATION
       sunmatrix/magmadense
     )

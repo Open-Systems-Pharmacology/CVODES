@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,7 +17,7 @@
 
 module test_nvector_openmp
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use fnvector_openmp_mod
   use test_utilities
   implicit none
@@ -33,6 +33,7 @@ module test_nvector_openmp
 
     integer(c_long)         :: lenrw(1), leniw(1) ! real and int work space size
     integer(c_long)         :: ival               ! integer work value
+    type(c_ptr)             :: cptr               ! c_ptr work value
     real(c_double)          :: rval               ! real work value
     real(c_double)          :: xdata(N)           ! vector data array
     real(c_double), pointer :: xptr(:)            ! pointer to vector data array
@@ -41,25 +42,25 @@ module test_nvector_openmp
     type(c_ptr)             :: xvecs, zvecs       ! C pointer to array of C pointers to N_Vectors
 
     !===== Setup ====
-    x => FN_VMake_OpenMP(N, xdata, 2, sunctx)
+    x => FN_VMake_OpenMP(N, xdata, 2)
     call FN_VConst(ONE, x)
     y => FN_VClone_OpenMP(x)
     call FN_VConst(ONE, y)
     z => FN_VClone_OpenMP(x)
     call FN_VConst(ONE, z)
 
-    xvecs = FN_VCloneVectorArray(nv, x)
-    zvecs = FN_VCloneVectorArray(nv, z)
+    xvecs = FN_VCloneVectorArray_OpenMP(nv, x)
+    zvecs = FN_VCloneVectorArray_OpenMP(nv, z)
     nvarr = (/ ONE, ONE, ONE /)
 
     !===== Test =====
 
     ! test constructors
-    tmp => FN_VNewEmpty_OpenMP(N, 2, sunctx)
+    tmp => FN_VNewEmpty_OpenMP(N, 2)
     call FN_VDestroy_OpenMP(tmp)
-    tmp => FN_VMake_OpenMP(N, xdata, 2, sunctx)
+    tmp => FN_VMake_OpenMP(N, xdata, 2)
     call FN_VDestroy_OpenMP(tmp)
-    tmp => FN_VNew_OpenMP(N, 2, sunctx)
+    tmp => FN_VNew_OpenMP(N, 2)
     call FN_VDestroy_OpenMP(tmp)
     tmp => FN_VCloneEmpty_OpenMP(x)
     call FN_VDestroy_OpenMP(tmp)
@@ -69,7 +70,7 @@ module test_nvector_openmp
     call FN_VSpace_OpenMP(x, lenrw, leniw)
     xptr => FN_VGetArrayPointer_OpenMP(x)
     call FN_VSetArrayPointer_OpenMP(xdata, x)
-    ival = FN_VGetCommunicator(x)
+    cptr = FN_VGetCommunicator(x)
     ival = FN_VGetLength_OpenMP(x)
 
     ! test standard vector operations
@@ -109,8 +110,8 @@ module test_nvector_openmp
     call FN_VDestroy_OpenMP(x)
     call FN_VDestroy_OpenMP(y)
     call FN_VDestroy_OpenMP(z)
-    call FN_VDestroyVectorArray(xvecs, nv)
-    call FN_VDestroyVectorArray(zvecs, nv)
+    call FN_VDestroyVectorArray_OpenMP(xvecs, nv)
+    call FN_VDestroyVectorArray_OpenMP(zvecs, nv)
 
     ret = 0
 
@@ -126,7 +127,7 @@ module test_nvector_openmp
     !===== Setup ====
     fails = 0
 
-    x => FN_VMake_OpenMP(N, xdata, 2, sunctx)
+    x => FN_VMake_OpenMP(N, xdata, 2)
     call FN_VConst(ONE, x)
 
     !==== tests ====
@@ -144,7 +145,7 @@ end module
 
 integer(C_INT) function check_ans(ans, X, local_length) result(failure)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use test_utilities
   implicit none
 
@@ -166,7 +167,7 @@ end function check_ans
 
 logical function has_data(X) result(failure)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use test_utilities
   implicit none
 
@@ -190,8 +191,6 @@ program main
   !============== Introduction =============
   print *, 'OpenMP N_Vector Fortran 2003 interface test'
 
-  call Test_Init(SUN_COMM_NULL)
-
   fails = smoke_tests()
   if (fails /= 0) then
     print *, 'FAILURE: smoke tests failed'
@@ -207,6 +206,4 @@ program main
   else
     print *, 'SUCCESS: all unit tests passed'
   end if
-
-  call Test_Finalize()
 end program main

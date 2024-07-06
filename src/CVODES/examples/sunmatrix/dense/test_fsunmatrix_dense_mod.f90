@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,7 +17,6 @@
 
 module test_fsunmatrix_dense
   use, intrinsic :: iso_c_binding
-  use test_utilities
   implicit none
 
   integer(C_LONG), parameter :: N = 4
@@ -28,10 +27,11 @@ contains
 
     !======== Inclusions ==========
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
     use fsunmatrix_dense_mod
     use fnvector_serial_mod
+    use test_utilities
 
     !======== Declarations ========
     implicit none
@@ -45,13 +45,13 @@ contains
 
     fails = 0
 
-    x => FN_VNew_Serial(N, sunctx)
-    y => FN_VNew_Serial(N, sunctx)
+    x => FN_VNew_Serial(N)
+    y => FN_VNew_Serial(N)
 
     !===== Calls to interface =====
 
     ! constructor
-    A => FSUNDenseMatrix(N, N, sunctx)
+    A => FSUNDenseMatrix(N, N)
     if (.not. associated(A)) then
       print *,'>>> FAILED - ERROR in FSUNDenseMatrix; halting'
       stop 1
@@ -88,8 +88,8 @@ contains
 
   integer(C_INT) function unit_tests() result(fails)
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
     use fnvector_serial_mod
     use fsunmatrix_dense_mod
     use test_sunmatrix
@@ -103,10 +103,10 @@ contains
 
     fails = 0
 
-    A => FSUNDenseMatrix(N, N, sunctx)
-    I => FSUNDenseMatrix(N, N, sunctx)
-    x => FN_VNew_Serial(N, sunctx)
-    y => FN_VNew_Serial(N, sunctx)
+    A => FSUNDenseMatrix(N, N)
+    I => FSUNDenseMatrix(N, N)
+    x => FN_VNew_Serial(N)
+    y => FN_VNew_Serial(N)
 
     ! fill matrix A
     Adata => FSUNDenseMatrix_Data(A)
@@ -167,8 +167,6 @@ program main
   !============== Introduction =============
   print *, 'Dense SUNMatrix Fortran 2003 interface test'
 
-  call Test_Init(SUN_COMM_NULL)
-
   fails = unit_tests()
   if (fails /= 0) then
     print *, 'FAILURE: n unit tests failed'
@@ -176,15 +174,12 @@ program main
   else
     print *, 'SUCCESS: all unit tests passed'
   end if
-
-  call Test_Finalize()
-
 end program main
 
 ! exported functions used by test_sunmatrix
 integer(C_INT) function check_matrix(A, B, tol) result(fails)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_matrix_mod
   use fsunmatrix_dense_mod
   use test_utilities
 
@@ -220,7 +215,7 @@ end function check_matrix
 
 integer(C_INT) function check_matrix_entry(A, c, tol) result(fails)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_matrix_mod
   use fsunmatrix_dense_mod
   use test_utilities
 
@@ -258,7 +253,7 @@ end function check_matrix_entry
 
 logical function is_square(A) result(res)
   use, intrinsic :: iso_c_binding
-  use fsundials_core_mod
+  use fsundials_matrix_mod
   use fsunmatrix_dense_mod
 
   implicit none

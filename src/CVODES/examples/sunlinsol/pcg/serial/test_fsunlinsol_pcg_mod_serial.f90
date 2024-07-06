@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -21,8 +21,7 @@
 
 module test_fsunlinsol_pcg_serial
   use, intrinsic :: iso_c_binding
-
-  use test_utilities
+  use fsundials_nvector_mod
   implicit none
 
   integer(C_LONG), private, parameter :: N = 100
@@ -39,9 +38,9 @@ contains
 
   integer(C_INT) function unit_tests() result(fails)
     use, intrinsic :: iso_c_binding
-
-
-
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
+    use fsundials_linearsolver_mod
     use fnvector_serial_mod
     use fsunlinsol_pcg_mod
     use test_sunlinsol
@@ -64,14 +63,14 @@ contains
     A  => null()
     s2 => null()
 
-    x    => FN_VNew_Serial(N, sunctx)
-    xhat => FN_VNew_Serial(N, sunctx)
-    b    => FN_VNew_Serial(N, sunctx)
+    x    => FN_VNew_Serial(N)
+    xhat => FN_VNew_Serial(N)
+    b    => FN_VNew_Serial(N)
 
     allocate(probdata)
     probdata%N = N
-    probdata%d => FN_VNew_Serial(N, sunctx)
-    probdata%s => FN_VNew_Serial(N, sunctx)
+    probdata%d => FN_VNew_Serial(N)
+    probdata%s => FN_VNew_Serial(N)
 
     ! fill xhat vector with uniform random data in [1, 2)
     xdata => FN_VGetArrayPointer(xhat)
@@ -84,7 +83,7 @@ contains
     call FN_VConst(FIVE, probdata%d)
 
     ! create PCG linear solver
-    LS => FSUNLinSol_PCG(x, pretype, maxl, sunctx)
+    LS => FSUNLinSol_PCG(x, pretype, maxl)
 
     ! run initialization tests
     fails = fails + Test_FSUNLinSolGetType(LS, SUNLINEARSOLVER_ITERATIVE, 0)
@@ -123,7 +122,7 @@ contains
     end if
 
     ! Run tests with this setup
-    fails = fails + FSUNLinSol_PCGSetPrecType(LS, SUN_PREC_NONE);
+    fails = fails + FSUNLinSol_PCGSetPrecType(LS, PREC_NONE);
     fails = fails + Test_FSUNLinSolSetup(LS, A, 0);
     fails = fails + Test_FSUNLinSolSolve(LS, A, x, b, tol, 0);
     fails = fails + Test_FSUNLinSolLastFlag(LS, 0);
@@ -189,7 +188,7 @@ contains
     end if
 
     ! Run tests with this setup
-    fails = fails + FSUNLinSol_PCGSetPrecType(LS, SUN_PREC_NONE);
+    fails = fails + FSUNLinSol_PCGSetPrecType(LS, PREC_NONE);
     fails = fails + Test_FSUNLinSolSetup(LS, A, 0);
     fails = fails + Test_FSUNLinSolSolve(LS, A, x, b, tol, 0);
     fails = fails + Test_FSUNLinSolLastFlag(LS, 0);
@@ -211,13 +210,12 @@ contains
     call FN_VDestroy(b)
     call FN_VDestroy(probdata%d)
     call FN_VDestroy(probdata%s)
-    deallocate(probdata)
 
   end function unit_tests
 
   integer(C_INT) function ATimes(udata, vvec, zvec) result(ret) bind(C)
     use, intrinsic :: iso_c_binding
-
+    use fsundials_nvector_mod
     use test_utilities
 
     implicit none
@@ -258,7 +256,7 @@ contains
   integer(C_INT) function PSolve(udata, rvec, zvec, tol, lr) &
       result(ret) bind(C)
     use, intrinsic :: iso_c_binding
-
+    use fsundials_nvector_mod
     use test_utilities
 
     implicit none
@@ -341,8 +339,6 @@ program main
   print *, 'PCG SUNLinearSolver Fortran 2003 interface test'
   print *, ''
 
-  call Test_Init(SUN_COMM_NULL)
-
   fails = unit_tests()
   if (fails /= 0) then
     print *, 'FAILURE: ', fails, ' unit tests failed'
@@ -350,7 +346,4 @@ program main
   else
     print *,'SUCCESS: all unit tests passed'
   end if
-
-  call Test_Finalize()
-
 end program main

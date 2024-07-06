@@ -2,7 +2,7 @@
 # Programmer(s): Steven Smith @ LLNL
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -30,6 +30,7 @@ set(nvector_openmp_examples
 # Dependencies for nvector examples
 set(nvector_examples_dependencies
   test_nvector
+  sundials_nvector
   )
 
 # If building F2003 tests
@@ -48,7 +49,7 @@ if (BUILD_FORTRAN_MODULE_INTERFACE)
 endif()
 
 # Set-up linker flags and link libraries
-set(SUNDIALS_LIBS ${NVECS_LIB} ${EXE_EXTRA_LINK_LIBS})
+set(SUNDIALS_LIBS ${NVECS_LIB} ${EXTRA_LINK_LIBS})
 
 # Add the build and install targets for each example
 foreach(example_tuple ${nvector_openmp_examples})
@@ -62,16 +63,13 @@ foreach(example_tuple ${nvector_openmp_examples})
   # example source files once for testing with different inputs
   if(NOT TARGET ${example})
     # example source files
-    add_executable(${example} ${example}.c)
-
-    # link vector test utilties
-    target_link_libraries(${example} PRIVATE test_nvector_obj)
+    add_executable(${example} ${example}.c ../test_nvector.c)
 
     # folder to organize targets in an IDE
     set_target_properties(${example} PROPERTIES FOLDER "Examples")
 
     # libraries to link against
-    target_link_libraries(${example} PRIVATE ${SUNDIALS_LIBS})
+    target_link_libraries(${example} ${SUNDIALS_LIBS})
   endif()
 
   # check if example args are provided and set the test name
@@ -92,6 +90,7 @@ foreach(example_tuple ${nvector_openmp_examples})
     install(FILES ${example}.c
       ../test_nvector.c
       ../test_nvector.h
+      ${SUNDIALS_SOURCE_DIR}/src/sundials/sundials_nvector.c
       DESTINATION ${EXAMPLES_INSTALL_PATH}/nvector/C_openmp)
   endif()
 

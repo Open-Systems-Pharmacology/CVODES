@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,7 +17,6 @@
 
 module test_fsunlinsol_band
   use, intrinsic :: iso_c_binding
-  use test_utilities
   implicit none
 
   integer(C_LONG), parameter :: N = 10
@@ -28,9 +27,9 @@ contains
 
   integer(C_INT) function unit_tests() result(fails)
     use, intrinsic :: iso_c_binding
-
-
-
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
+    use fsundials_linearsolver_mod
     use fnvector_serial_mod
     use fsunmatrix_band_mod
     use fsunlinsol_band_mod
@@ -41,6 +40,7 @@ contains
     type(SUNLinearSolver), pointer :: LS           ! test linear solver
     type(SUNMatrix), pointer :: A                  ! test matrices
     type(N_Vector),  pointer :: x, y, b            ! test vectors
+    real(C_DOUBLE),  pointer :: colj(:)            ! matrix column data
     real(C_DOUBLE),  pointer :: xdata(:), Adata(:) ! data arrays
     real(C_DOUBLE)           :: tmpr               ! temporary real value
     integer(C_LONG)          :: j, k
@@ -50,20 +50,21 @@ contains
     fails = 0
     smu = 0
 
-    A => FSUNBandMatrix(N, mu, ml, sunctx)
-    x => FN_VNew_Serial(N, sunctx)
-    y => FN_VNew_Serial(N, sunctx)
-    b => FN_VNew_Serial(N, sunctx)
+    A => FSUNBandMatrix(N, mu, ml)
+    x => FN_VNew_Serial(N)
+    y => FN_VNew_Serial(N)
+    b => FN_VNew_Serial(N)
 
     ! fill A matrix with uniform random data in [0, 1/N)
     Adata => FSUNBandMatrix_Data(A)
     do j=1, N
-      offset = (j-1)*(smu+ml+1) + smu + 1 ! offset to diagonal
-      kstart = merge(-mu, -(j-1), j > mu) ! above diagonal
-      kend = merge(N-j , ml, j > N - ml)  ! below diagonal
+      offset = smu-mu+1 + j*(smu+ml+1)
+      colj(-mu:ml) => Adata(offset:mu+ml)
+      kstart = merge(-j, -mu, j < mu)
+      kend = merge(N-1-j, ml, j > N-1-ml)
       do k=kstart, kend
         call random_number(tmpr)
-        Adata(offset+k) = tmpr / N
+        colj(k) = tmpr / N
       end do
     end do
 
@@ -97,12 +98,12 @@ contains
     end if
 
     ! create band linear solver
-    LS => FSUNLinSol_Band(x, A, sunctx)
+    LS => FSUNLinSol_Band(x, A)
 
     ! run tests
     fails = fails + Test_FSUNLinSolInitialize(LS, 0)
     fails = fails + Test_FSUNLinSolSetup(LS, A, 0)
-    fails = fails + Test_FSUNLinSolSolve(LS, A, x, b, 100*SUN_UNIT_ROUNDOFF, 0)
+    fails = fails + Test_FSUNLinSolSolve(LS, A, x, b, 100*UNIT_ROUNDOFF, 0)
 
     fails = fails + Test_FSUNLinSolGetType(LS, SUNLINEARSOLVER_DIRECT, 0)
     fails = fails + Test_FSUNLinSolLastFlag(LS, 0)
@@ -121,7 +122,7 @@ end module
 
 integer(C_INT) function check_vector(X, Y, tol) result(failure)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use test_utilities
 
   implicit none
@@ -171,8 +172,6 @@ program main
   !============== Introduction =============
   print *, 'Band SUNLinearSolver Fortran 2003 interface test'
 
-  call Test_Init(SUN_COMM_NULL)
-
   fails = unit_tests()
   if (fails /= 0) then
     print *, 'FAILURE: n unit tests failed'
@@ -180,7 +179,4 @@ program main
   else
     print *,'SUCCESS: all unit tests passed'
   end if
-
-  call Test_Finalize()
-
 end program main

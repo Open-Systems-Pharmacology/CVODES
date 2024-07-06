@@ -6,7 +6,7 @@
 ! R. Reynolds @ SMU.
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -21,6 +21,9 @@
 
 module test_sunlinsol
   use, intrinsic :: iso_c_binding
+  use fsundials_nvector_mod
+  use fsundials_matrix_mod
+  use fsundials_types_mod
   use test_utilities
 
   implicit none
@@ -32,19 +35,20 @@ contains
 
   integer(C_INT) function Test_FSUNLinSolGetType(S, mysunid, myid) result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver), pointer :: S
     integer(SUNLinearSolver_Type)  :: mysunid, sunid
     integer(C_INT)                 :: myid
 
-    failure = 0
-
     sunid = FSUNLinSolGetType(S)
     if (sunid /= mysunid) then
       failure = 1
       write(*,*) ">>> FAILED test -- FSUNLinSolGetType, Proc", myid
     else if (myid == 0) then
+      failure = 0
       write(*,*) "    PASSED test -- FSUNLinSolGetType"
     end if
   end function Test_FSUNLinSolGetType
@@ -52,6 +56,8 @@ contains
 
   integer(C_INT) function Test_FSUNLinSolLastFlag(S, myid) result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver), pointer :: S
@@ -71,6 +77,8 @@ contains
 
   integer(C_INT) function Test_FSUNLinSolSpace(S, myid) result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver), pointer :: S
@@ -93,6 +101,8 @@ contains
 
   integer(C_INT) function Test_FSUNLinSolNumIters(S, myid) result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver), pointer :: S
@@ -113,6 +123,8 @@ contains
 
   integer(C_INT) function Test_FSUNLinSolResNorm(S, myid) result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver), pointer :: S
@@ -135,8 +147,8 @@ contains
 
   integer(C_INT) function Test_FSUNLinSolResid(S, myid) result(failure)
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_nvector_mod
+    use fsundials_linearsolver_mod
 
     implicit none
 
@@ -160,6 +172,8 @@ contains
   integer(C_INT) function Test_FSUNLinSolSetATimes(S, ATdata, ATimes, myid) &
     result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver), pointer :: S
@@ -186,6 +200,8 @@ contains
   integer(C_INT) function Test_FSUNLinSolSetPreconditioner(S, Pdata, PSetup, PSolve, myid) &
     result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver), pointer :: S
@@ -210,6 +226,9 @@ contains
   integer(C_INT) function Test_FSUNLinSolSetScalingVectors(S, s1, s2, myid) &
     result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_linearsolver_mod
+    use fsundials_nvector_mod
+
     implicit none
 
     type(SUNLinearSolver) :: S
@@ -234,6 +253,8 @@ contains
 
   integer(C_INT) function Test_FSUNLinSolInitialize(S, myid) result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver) :: S
@@ -255,6 +276,9 @@ contains
 
   integer(C_INT) function Test_FSUNLinSolSetup(S, A, myid) result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_matrix_mod
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver) :: S
@@ -285,6 +309,10 @@ contains
   ! ----------------------------------------------------------------------
   integer(C_INT) function Test_FSUNLinSolSolve(S, A, x, b, tol, myid) result(failure)
     use, intrinsic :: iso_c_binding
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
+    use fsundials_linearsolver_mod
+
     implicit none
 
     type(SUNLinearSolver)   :: S

@@ -2,7 +2,7 @@
 ! Programmer(s): David J. Gardner, and Cody J. Balos @ LLNL
 ! ------------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -53,11 +53,7 @@
 module ode_problem
 
   use, intrinsic :: iso_c_binding
-  use fsundials_core_mod
   implicit none
-
-  ! SUNDIALS simulation context
-  type(c_ptr) :: ctx
 
   ! problem parameters
   real(c_double),  parameter :: XMAX  = 2.0d0
@@ -94,6 +90,7 @@ contains
 
     !======= Inclusions ===========
     use, intrinsic :: iso_c_binding
+    use fsundials_nvector_mod
     use fnvector_serial_mod
 
     !======= Declarations =========
@@ -157,6 +154,7 @@ contains
   ! Set initial conditions in u vector.
   subroutine SetIC(nv_u)
     use, intrinsic :: iso_c_binding
+    use fsundials_nvector_mod
 
     implicit none
 
@@ -182,9 +180,11 @@ program main
 
   !======= Inclusions ===========
   use, intrinsic :: iso_c_binding
-  use fsundials_core_mod            ! Access SUNDIALS core types, data structures, etc.
+
   use fcvodes_mod                   ! Fortran interface to CVODES
   use fnvector_serial_mod           ! Fortran interface to serial N_Vector
+  use fsundials_nvector_mod         ! Fortran interface to generic N_Vector
+  use fsundials_nonlinearsolver_mod ! Fortran interface to generic SUNNonlinearSolver
   use fsunnonlinsol_fixedpoint_mod  ! Fortran interface to fixed point SUNNonlinearSolver
   use ode_problem                   ! ODE defining functions and parameters
 
@@ -195,8 +195,7 @@ program main
   type(c_ptr)                       :: cvodes_mem
   type(N_Vector),           pointer :: u, uiS
   type(c_ptr)                       :: uS
-  type(SUNNonlinearSolver), pointer :: NLS
-  type(SUNNonlinearSolver), pointer :: NLSsens => null()
+  type(SUNNonlinearSolver), pointer :: NLS, NLSsens
   integer(c_int)                    :: iout, retval
   real(c_double)                    :: reltol, abstol, tout, t(1)
   integer(c_int)                    :: is
@@ -210,20 +209,13 @@ program main
   ! Process arguments
   call ProcessArgs(sensi, sensi_meth, err_con)
 
-  ! Create SUNDIALS simulation context
-  retval = FSUNContext_Create(SUN_COMM_NULL, ctx)
-  if (retval /= 0) then
-     print *, "Error: FSUNContext_Create returned ",retval
-     stop 1
-  end if
-
   ! Set problem data
   dx   = XMAX/(MX+1)
   p(0) = 1.0d0
   p(1) = 0.5d0
 
   ! Allocate and set initial states
-  u => FN_VNew_Serial(NEQ, ctx)
+  u => FN_VNew_Serial(NEQ)
   if (.not. associated(u)) then
     write(*,*) 'ERROR: FN_VNew_Serial returned NULL'
     stop 1
@@ -235,7 +227,7 @@ program main
   abstol = ATOL
 
   ! Create CVODES object
-  cvodes_mem = FCVodeCreate(CV_ADAMS, ctx)
+  cvodes_mem = FCVodeCreate(CV_ADAMS)
   if (.not. c_associated(cvodes_mem)) then
     write(*,*) 'ERROR: cvodes_mem = NULL'
     stop 1
@@ -250,7 +242,7 @@ program main
   call check_retval(retval, "FCVodeSStolerances")
 
   ! Create fixed point nonlinear solver object
-  NLS => FSUNNonlinSol_FixedPoint(u, 0, ctx)
+  NLS => FSUNNonlinSol_FixedPoint(u, 0)
   if (.not. associated(NLS)) then
     write(*,*) 'ERROR: FSUNNonlinSol_FixedPoint returned NULL'
     stop 1
@@ -299,11 +291,11 @@ program main
 
     ! create sensitivity fixed point nonlinear solver object
     if (sensi_meth == CV_SIMULTANEOUS) then
-      NLSsens => FSUNNonlinSol_FixedPointSens(NS+1, u, 0, ctx)
+      NLSsens => FSUNNonlinSol_FixedPointSens(NS+1, u, 0)
     else if (sensi_meth == CV_STAGGERED) then
-      NLSsens => FSUNNonlinSol_FixedPointSens(NS, u, 0, ctx)
+      NLSsens => FSUNNonlinSol_FixedPointSens(NS, u, 0)
     else
-      NLSsens => FSUNNonlinSol_FixedPoint(u, 0, ctx)
+      NLSsens => FSUNNonlinSol_FixedPoint(u, 0)
     endif
 
     if (.not. associated(NLSsens)) then
@@ -382,11 +374,9 @@ program main
 
   call FCVodeFree(cvodes_mem)
   retval = FSUNNonlinSolFree(NLS)
-  if (associated(NLSsens)) then
+  if (sensi /= 0) then
     retval = FSUNNonlinSolFree(NLSsens)
   endif
-
-  retval = FSUNContext_Free(ctx)
 
 end program main
 
@@ -460,9 +450,8 @@ end subroutine
 ! Print the current number of steps, order, stepsize, and max norm of solution
 subroutine PrintOutput(cvodes_mem, t, u)
   use, intrinsic :: iso_c_binding
-  use fsundials_core_mod
   use fcvodes_mod
-
+  use fsundials_nvector_mod
   implicit none
 
   ! subroutine args
@@ -481,7 +470,7 @@ subroutine PrintOutput(cvodes_mem, t, u)
   retval = FCVodeGetLastOrder(cvodes_mem, qu)
   retval = FCVodeGetLastStep(cvodes_mem, hu)
 
-  write(*,'(1x,es10.3,1x,i2,2x,es10.3,i5)') t, qu, hu, nst
+  write(*,'(1x,es9.3,1x,i2,2x,es9.3,i5)') t, qu, hu, nst
 
   unorm = FN_VMaxNorm(u)
   write(*,'(1x,A,es12.4)') "                                Solution        ", unorm
@@ -490,7 +479,7 @@ end subroutine
 
 subroutine PrintOutputS(uS)
   use, intrinsic :: iso_c_binding
-  use fsundials_core_mod
+  use fsundials_nvector_mod
 
   ! subroutine args
   type(c_ptr) :: uS

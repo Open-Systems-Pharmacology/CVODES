@@ -2,7 +2,7 @@
  * Programmer(s): Cody J. Balos @ LLNL
  * -----------------------------------------------------------------
  * SUNDIALS Copyright Start
- * Copyright (c) 2002-2024, Lawrence Livermore National Security
+ * Copyright (c) 2002-2021, Lawrence Livermore National Security
  * and Southern Methodist University.
  * All rights reserved.
  *
@@ -20,49 +20,29 @@
 #include <hip/hip_runtime.h>
 #include <sundials/sundials_memory.h>
 
-#ifdef __cplusplus /* wrapper to enable C++ usage */
+#ifdef __cplusplus  /* wrapper to enable C++ usage */
 extern "C" {
 #endif
 
+
 /* Implementation specific functions */
 
-SUNDIALS_EXPORT
-SUNMemoryHelper SUNMemoryHelper_Hip(SUNContext sunctx);
+SUNMemoryHelper SUNMemoryHelper_Hip();
 
 /* SUNMemoryHelper functions */
 
-SUNDIALS_EXPORT
-SUNErrCode SUNMemoryHelper_Alloc_Hip(SUNMemoryHelper helper, SUNMemory* memptr,
-                                     size_t mem_size, SUNMemoryType mem_type,
-                                     void* queue);
+SUNDIALS_EXPORT int SUNMemoryHelper_Alloc_Hip(SUNMemoryHelper helper, SUNMemory* memptr,
+                                              size_t memsize, SUNMemoryType mem_type);
 
-SUNDIALS_EXPORT
-SUNMemoryHelper SUNMemoryHelper_Clone_Hip(SUNMemoryHelper helper);
+SUNDIALS_EXPORT int SUNMemoryHelper_Dealloc_Hip(SUNMemoryHelper helper, SUNMemory mem);
 
-SUNDIALS_EXPORT
-SUNErrCode SUNMemoryHelper_Dealloc_Hip(SUNMemoryHelper helper, SUNMemory mem,
-                                       void* queue);
+SUNDIALS_EXPORT int SUNMemoryHelper_Copy_Hip(SUNMemoryHelper helper, SUNMemory dst,
+                                             SUNMemory src, size_t memory_size);
 
-SUNDIALS_EXPORT
-SUNErrCode SUNMemoryHelper_Copy_Hip(SUNMemoryHelper helper, SUNMemory dst,
-                                    SUNMemory src, size_t memory_size,
-                                    void* queue);
+SUNDIALS_EXPORT int SUNMemoryHelper_CopyAsync_Hip(SUNMemoryHelper helper, SUNMemory dst,
+                                                  SUNMemory src, size_t memory_size,
+                                                  void* ctx);
 
-SUNDIALS_EXPORT
-SUNErrCode SUNMemoryHelper_CopyAsync_Hip(SUNMemoryHelper helper, SUNMemory dst,
-                                         SUNMemory src, size_t memory_size,
-                                         void* queue);
-
-SUNDIALS_EXPORT
-SUNErrCode SUNMemoryHelper_Destroy_Hip(SUNMemoryHelper helper);
-
-SUNDIALS_EXPORT
-SUNErrCode SUNMemoryHelper_GetAllocStats_Hip(SUNMemoryHelper helper,
-                                             SUNMemoryType mem_type,
-                                             unsigned long* num_allocations,
-                                             unsigned long* num_deallocations,
-                                             size_t* bytes_allocated,
-                                             size_t* bytes_high_watermark);
 
 #ifdef __cplusplus
 }

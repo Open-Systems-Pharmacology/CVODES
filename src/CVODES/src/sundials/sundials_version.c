@@ -2,7 +2,7 @@
  * Programmer(s): David J. Gardner @ LLNL
  * -----------------------------------------------------------------
  * SUNDIALS Copyright Start
- * Copyright (c) 2002-2024, Lawrence Livermore National Security
+ * Copyright (c) 2002-2021, Lawrence Livermore National Security
  * and Southern Methodist University.
  * All rights reserved.
  *
@@ -16,46 +16,35 @@
  * -----------------------------------------------------------------*/
 
 #include <string.h>
+
 #include <sundials/sundials_version.h>
 
-#include "sundials/sundials_errors.h"
-
-/* note strlen does not include terminating null character hence the
-   use of >= when checking len below and strncpy copies up to len
-   characters including the terminating null character */
-
 /* fill string with SUNDIALS version information */
-SUNErrCode SUNDIALSGetVersion(char* version, int len)
+int SUNDIALSGetVersion(char *version, int len)
 {
-  if (version == NULL) { return SUN_ERR_ARG_CORRUPT; }
-  if (strlen(SUNDIALS_VERSION) >= (size_t)len)
-  {
-    return SUN_ERR_ARG_OUTOFRANGE;
-  }
+  if (version == NULL) return(-1);
+  if (strlen(SUNDIALS_VERSION) >= (size_t)len) return(-1);
 
   strncpy(version, SUNDIALS_VERSION, (size_t)len);
 
-  return SUN_SUCCESS;
+  return(0);
 }
 
 /* fill integers with SUNDIALS major, minor, and patch release
    numbers and fill a string with the release label */
-SUNErrCode SUNDIALSGetVersionNumber(int* major, int* minor, int* patch,
-                                    char* label, int len)
+int SUNDIALSGetVersionNumber(int *major, int *minor, int *patch,
+                             char *label, int len)
 {
-  if (major == NULL || minor == NULL || patch == NULL || label == NULL)
-  {
-    return SUN_ERR_ARG_CORRUPT;
-  }
-  if (strlen(SUNDIALS_VERSION_LABEL) >= (size_t)len)
-  {
-    return SUN_ERR_ARG_OUTOFRANGE;
-  }
+  if (major == NULL ||
+      minor == NULL ||
+      patch == NULL ||
+      label == NULL) return(-1);
+  if (strlen(SUNDIALS_VERSION_LABEL) >= (size_t)len) return(-1);
 
   *major = SUNDIALS_VERSION_MAJOR;
   *minor = SUNDIALS_VERSION_MINOR;
   *patch = SUNDIALS_VERSION_PATCH;
   strncpy(label, SUNDIALS_VERSION_LABEL, (size_t)len);
 
-  return SUN_SUCCESS;
+  return(0);
 }

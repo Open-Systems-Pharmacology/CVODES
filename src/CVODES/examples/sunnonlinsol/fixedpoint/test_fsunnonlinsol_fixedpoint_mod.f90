@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,7 +17,7 @@
 
 module test_fsunnonlinsol_fixedpoint
   use, intrinsic :: iso_c_binding
-  use test_utilities
+  use fsundials_nvector_mod
 
   implicit none
 
@@ -36,7 +36,8 @@ contains
 
   integer(C_INT) function unit_tests() result(retval)
     use, intrinsic :: iso_c_binding
-    use fsundials_core_mod
+    use fsundials_nvector_mod
+    use fsundials_nonlinearsolver_mod
     use fnvector_serial_mod
     use fsunnonlinsol_fixedpoint_mod
 
@@ -48,7 +49,9 @@ contains
     integer(C_LONG)                   :: niters(1)
     integer(C_INT)                    :: tmp
 
-    x  => FN_VNew_Serial(NEQ, sunctx)
+    retval = 0
+
+    x  => FN_VNew_Serial(NEQ)
     y0 => FN_VClone(x)
     y  => FN_VClone(x)
     w  => FN_VClone(x)
@@ -62,7 +65,7 @@ contains
     call FN_VConst(1.0d0, w)
 
     ! create and test NLS
-    NLS => FSUNNonlinsol_FixedPoint(y, 0, sunctx)
+    NLS => FSUNNonlinsol_FixedPoint(y, 0)
 
     retval = FSUNNonlinSolSetSysFn(NLS, c_funloc(FPFunction))
     if (retval /= 0) then
@@ -121,8 +124,8 @@ contains
   integer(C_INT) function ConvTest(NLS, y, del, tol, ewt, mem) &
     result(retval) bind(C)
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_nvector_mod
+    use fsundials_nonlinearsolver_mod
 
     implicit none
 
@@ -136,7 +139,7 @@ contains
     delnrm = FN_VMaxNorm(del)
 
     if (delnrm <= tol) then
-      retval = SUN_SUCCESS  ! converged
+      retval = SUN_NLS_SUCCESS  ! converged
     else
       retval = SUN_NLS_CONTINUE ! not converged
     end if
@@ -160,7 +163,7 @@ contains
   integer(C_INT) function FPFunction(y, f, mem) &
     result(retval) bind(C)
     use, intrinsic :: iso_c_binding
-
+    use fsundials_nvector_mod
 
     implicit none
 
@@ -200,8 +203,6 @@ program main
   !============== Introduction =============
   print *, 'fixedpoint SUNNonlinearSolver Fortran 2003 interface test'
 
-  call Test_Init(SUN_COMM_NULL)
-
   fails = unit_tests()
   if (fails /= 0) then
     print *, 'FAILURE: n unit tests failed'
@@ -209,7 +210,5 @@ program main
   else
     print *,'SUCCESS: all unit tests passed'
   end if
-
-  call Test_Finalize()
 
 end program main

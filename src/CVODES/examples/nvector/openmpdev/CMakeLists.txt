@@ -2,7 +2,7 @@
 # Programmer(s): David J. Gardner and Shelby Lockhart @ LLNL
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -26,6 +26,7 @@ set(nvector_openmpdev_examples
 # Dependencies for nvector examples
 set(nvector_examples_dependencies
   test_nvector
+  sundials_nvector
   )
 
 # Add source directory to include directories
@@ -35,7 +36,7 @@ include_directories(. ..)
 set(NVECS_LIB sundials_nvecopenmpdev)
 
 # Set-up linker flags and link libraries
-set(SUNDIALS_LIBS ${NVECS_LIB} ${EXE_EXTRA_LINK_LIBS})
+set(SUNDIALS_LIBS ${NVECS_LIB} ${EXTRA_LINK_LIBS})
 
 set(CMAKE_EXE_LINKER_FLAGS ${OpenMP_C_FLAGS})
 
@@ -51,16 +52,13 @@ foreach(example_tuple ${nvector_openmpdev_examples})
   # example source files once for testing with different inputs
   if(NOT TARGET ${example})
     # example source files
-    add_executable(${example} ${example}.c)
-
-    # link vector test utilties
-    target_link_libraries(${example} PRIVATE test_nvector_obj)
+    add_executable(${example} ${example}.c ../test_nvector.c)
 
     # folder to organize targets in an IDE
     set_target_properties(${example} PROPERTIES FOLDER "Examples")
 
     # libraries to link against
-    target_link_libraries(${example} PRIVATE ${SUNDIALS_LIBS})
+    target_link_libraries(${example} ${SUNDIALS_LIBS})
   endif()
 
   # check if example args are provided and set the test name
@@ -81,6 +79,7 @@ foreach(example_tuple ${nvector_openmpdev_examples})
     install(FILES ${example}.c
       ../test_nvector.c
       ../test_nvector.h
+      ../../../src/sundials/sundials_nvector.c
       DESTINATION ${EXAMPLES_INSTALL_PATH}/nvector/openmpdev)
   endif()
 

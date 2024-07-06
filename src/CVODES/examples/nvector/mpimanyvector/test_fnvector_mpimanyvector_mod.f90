@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,8 +17,7 @@
 
 module test_nvector_mpimanyvector
   use, intrinsic :: iso_c_binding
-
-
+  use fsundials_nvector_mod
   use fnvector_mpimanyvector_mod
   use fnvector_serial_mod
   use test_utilities
@@ -30,7 +29,7 @@ module test_nvector_mpimanyvector
   integer(c_long), parameter :: N2       = 200        ! individual vector length
   integer(c_int),  parameter :: nv       = 3          ! length of vector arrays
   integer(c_long), parameter :: N        = N1 + N2    ! overall manyvector length
-  integer(c_int), target     :: comm = MPI_COMM_WORLD ! default MPI communicator
+  integer(c_int), parameter  :: comm = MPI_COMM_WORLD ! default MPI communicator
   integer(c_int)             :: nprocs                ! number of MPI processes
 
 contains
@@ -40,6 +39,7 @@ contains
 
     integer(c_long)         :: lenrw(1), leniw(1)     ! real and int work space size
     integer(c_long)         :: ival                   ! integer work value
+    type(c_ptr)             :: cptr                   ! c_ptr work value
     real(c_double)          :: rval                   ! real work value
     real(c_double)          :: x1data(N1), x2data(N2) ! vector data array
     real(c_double), pointer :: xptr(:)                ! pointer to vector data array
@@ -49,13 +49,13 @@ contains
     type(c_ptr)             :: xvecs, zvecs           ! C pointer to array of MPIManyVectors
 
     !===== Setup ====
-    subvecs = FN_VNewVectorArray(nsubvecs, sunctx)
-    tmp  => FN_VMake_Serial(N1, x1data, sunctx)
+    subvecs = FN_VNewVectorArray(nsubvecs)
+    tmp  => FN_VMake_Serial(N1, x1data)
     call FN_VSetVecAtIndexVectorArray(subvecs, 0, tmp)
-    tmp  => FN_VMake_Serial(N2, x2data, sunctx)
+    tmp  => FN_VMake_Serial(N2, x2data)
     call FN_VSetVecAtIndexVectorArray(subvecs, 1, tmp)
 
-    x => FN_VMake_MPIManyVector(comm, int(nsubvecs,8), subvecs, sunctx)
+    x => FN_VMake_MPIManyVector(MPI_COMM_WORLD, int(nsubvecs,8), subvecs)
     call FN_VConst(ONE, x)
     y => FN_VClone_MPIManyVector(x)
     call FN_VConst(ONE, y)
@@ -71,7 +71,7 @@ contains
     ! test generic vector functions
     ival = FN_VGetVectorID_MPIManyVector(x)
     call FN_VSpace_MPIManyVector(x, lenrw, leniw)
-    ival = FN_VGetCommunicator(x)
+    cptr = FN_VGetCommunicator(x)
     ival = FN_VGetLength_MPIManyVector(x)
 
     ! test standard vector operations
@@ -111,7 +111,6 @@ contains
     ival = FN_VGetNumSubvectors_MPIManyVector(x)
     xptr => FN_VGetSubvectorArrayPointer_MPIManyVector(x, ival-1)
     ival = FN_VSetSubvectorArrayPointer_MPIManyVector(xptr, x, ival-1)
-    ival = FN_VGetNumSubvectors_MPIManyVector(x)
     tmp  => FN_VGetSubvector_MPIManyVector(x, ival-1)
 
     !==== Cleanup =====
@@ -141,20 +140,20 @@ contains
 
     !===== Setup ====
     fails = 0
-
+    
     call MPI_Comm_rank(comm, myid, fails)
     if (fails /= 0) then
       print *, '   FAILURE - MPI_COMM_RANK returned nonzero'
       stop 1
     endif
-
-    subvecs = FN_VNewVectorArray(nsubvecs, sunctx)
-    tmp  => FN_VMake_Serial(N1, x1data, sunctx)
+    
+    subvecs = FN_VNewVectorArray(nsubvecs)
+    tmp  => FN_VMake_Serial(N1, x1data)
     call FN_VSetVecAtIndexVectorArray(subvecs, 0, tmp)
-    tmp  => FN_VMake_Serial(N2, x2data, sunctx)
+    tmp  => FN_VMake_Serial(N2, x2data)
     call FN_VSetVecAtIndexVectorArray(subvecs, 1, tmp)
 
-    x => FN_VMake_MPIManyVector(comm, int(nsubvecs,8), subvecs, sunctx)
+    x => FN_VMake_MPIManyVector(MPI_COMM_WORLD, int(nsubvecs,8), subvecs)
     call FN_VConst(ONE, x)
 
     !==== tests ====
@@ -177,7 +176,7 @@ end module
 integer(C_INT) function check_ans(ans, X, local_length) result(failure)
   use, intrinsic :: iso_c_binding
   use fnvector_mpimanyvector_mod
-
+  use fsundials_nvector_mod
   use test_utilities
   implicit none
 
@@ -195,12 +194,12 @@ integer(C_INT) function check_ans(ans, X, local_length) result(failure)
   x1len = FN_VGetLength(X1)
   x0data => FN_VGetArrayPointer(X0)
   x1data => FN_VGetArrayPointer(X1)
-
+  
   if (local_length /= (x0len + x1len)) then
     failure = 1
     return
   endif
-
+  
   do i = 1, x0len
     if (FNEQ(x0data(i), ans) > 0) then
       failure = failure + 1
@@ -217,7 +216,7 @@ end function check_ans
 
 logical function has_data(X) result(failure)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use test_utilities
   implicit none
 
@@ -253,8 +252,6 @@ program main
   !============== Introduction =============
   if (myid == 0) print *, 'MPIManyVector N_Vector Fortran 2003 interface test'
 
-  call Test_Init(comm)
-
   call MPI_Comm_size(comm, nprocs, fails)
   if (fails /= 0) then
     print *, 'FAILURE: MPI_COMM_SIZE returned nonzero, proc', myid
@@ -282,8 +279,6 @@ program main
   else
     if (myid == 0) print *,'    SUCCESS - all unit tests passed'
   end if
-
-  call Test_Finalize()
 
   call MPI_Finalize(fails)
   if (fails /= 0) then

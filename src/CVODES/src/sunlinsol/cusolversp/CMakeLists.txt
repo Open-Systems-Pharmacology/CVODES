@@ -2,7 +2,7 @@
 # Programmer(s): Cody J. Balos @ LLNL
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -23,18 +23,17 @@ sundials_add_library(sundials_sunlinsolcusolversp
     ${SUNDIALS_SOURCE_DIR}/include/sunlinsol/sunlinsol_cusolversp_batchqr.h
   INCLUDE_SUBDIR
     sunlinsol
-  LINK_LIBRARIES
-    PUBLIC sundials_core
   OBJECT_LIBRARIES
+    sundials_generic_obj
   LINK_LIBRARIES
-    PUBLIC sundials_sunmatrixcusparse CUDA::cusolver
-    PRIVATE CUDA::cusparse
+    PUBLIC sundials_sunmatrixcusparse ${CUDA_cusolver_LIBRARY}
+    PRIVATE ${CUDA_cusparse_LIBRARY}
   OUTPUT_NAME
     sundials_sunlinsolcusolversp
   VERSION
     ${sunlinsollib_VERSION}
   SOVERSION
-  ${sunlinsollib_SOVERSION}
+    ${sunlinsollib_VERSION}
 )
 
 message(STATUS "Added SUNLINSOL_CUSOLVERSP module")

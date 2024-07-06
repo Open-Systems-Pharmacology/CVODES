@@ -2,7 +2,7 @@
 # Programmer(s): Daniel R. Reynolds @ SMU
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -27,6 +27,7 @@ set(nvector_mpimanyvector_examples
 set(nvector_examples_dependencies
   test_nvector
   test_mpinvector
+  sundials_nvector
   )
 
 # If building F2003 tests
@@ -49,7 +50,7 @@ if (BUILD_FORTRAN_MODULE_INTERFACE)
 endif()
 
 # Set-up linker flags and link libraries
-set(SUNDIALS_LIBS ${NVECS_LIB} ${EXE_EXTRA_LINK_LIBS})
+set(SUNDIALS_LIBS ${NVECS_LIB} ${EXTRA_LINK_LIBS})
 
 if(MPI_C_COMPILER)
   # use MPI wrapper as the compiler
@@ -84,19 +85,18 @@ foreach(example_tuple ${nvector_mpimanyvector_examples})
   # example source files once for testing with different inputs
   if(NOT TARGET ${example})
     # example source files
-    add_executable(${example} ${example}.c)
-
-    # link vector test utilties
-    target_link_libraries(${example} PRIVATE test_nvector_obj test_nvectormpi_obj)
+    add_executable(${example} ${example}.c
+      ../test_nvector.c
+      ../test_mpinvector.c)
 
     # folder to organize targets in an IDE
     set_target_properties(${example} PROPERTIES FOLDER "Examples")
 
     # libraries to link against
-    target_link_libraries(${example} PRIVATE ${SUNDIALS_LIBS})
+    target_link_libraries(${example} ${SUNDIALS_LIBS})
 
     if(NOT MPI_C_COMPILER)
-      target_link_libraries(${example} PRIVATE ${MPI_LIBRARIES})
+      target_link_libraries(${example} ${MPI_LIBRARIES})
     endif()
   endif()
 
@@ -128,6 +128,7 @@ foreach(example_tuple ${nvector_mpimanyvector_examples})
       ../test_nvector.c
       ../test_mpinvector.c
       ../test_nvector.h
+      ../../../src/sundials/sundials_nvector.c
       DESTINATION ${EXAMPLES_INSTALL_PATH}/nvector/mpimanyvector)
   endif()
 

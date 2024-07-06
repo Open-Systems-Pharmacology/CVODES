@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,19 +17,20 @@
 
 module test_nvector_parallel
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use fnvector_parallel_mod
   use test_utilities
   implicit none
   include "mpif.h"
 
+  integer(c_int), parameter  :: comm = MPI_COMM_WORLD ! default MPI communicator
   integer(c_long), parameter :: local_length = 100    ! vector local length
   integer(c_int),  parameter :: nv = 3                ! length of vector arrays
   integer(c_int),  parameter :: ns = 2                ! number of vector arrays
 
-  integer(c_int), target  :: comm = MPI_COMM_WORLD ! default MPI communicator
-  integer(c_long)         :: global_length ! vector global_length
-  integer(c_int)          :: nprocs        ! number of MPI processes
+  integer(c_long) :: global_length ! vector global_length
+  integer(c_int)  :: nprocs        ! number of MPI processes
+
   contains
 
   integer function smoke_tests() result(ret)
@@ -37,6 +38,7 @@ module test_nvector_parallel
 
     integer(c_long)         :: lenrw(1), leniw(1)  ! real and int work space size
     integer(c_long)         :: ival                ! integer work value
+    type(c_ptr)             :: cptr                ! c_ptr work value
     real(c_double)          :: rval                ! real work value
     real(c_double)          :: xdata(local_length) ! vector data array
     real(c_double), pointer :: xptr(:)             ! pointer to vector data array
@@ -45,25 +47,25 @@ module test_nvector_parallel
     type(c_ptr)             :: xvecs, zvecs        ! C pointer to array of C pointers to N_Vectors
 
     !===== Setup ====
-    x => FN_VMake_Parallel(comm, local_length, global_length, xdata, sunctx)
+    x => FN_VMake_Parallel(comm, local_length, global_length, xdata)
     call FN_VConst(ONE, x)
     y => FN_VClone_Parallel(x)
     call FN_VConst(ONE, y)
     z => FN_VClone_Parallel(x)
     call FN_VConst(ONE, z)
 
-    xvecs = FN_VCloneVectorArray(nv, x)
-    zvecs = FN_VCloneVectorArray(nv, z)
+    xvecs = FN_VCloneVectorArray_Parallel(nv, x)
+    zvecs = FN_VCloneVectorArray_Parallel(nv, z)
     nvarr = (/ ONE, ONE, ONE /)
 
     !===== Test =====
 
     ! test constructors
-    tmp => FN_VNewEmpty_Parallel(comm, local_length, global_length, sunctx)
+    tmp => FN_VNewEmpty_Parallel(comm, local_length, global_length)
     call FN_VDestroy_Parallel(tmp)
-    tmp => FN_VMake_Parallel(comm, local_length, global_length, xdata, sunctx)
+    tmp => FN_VMake_Parallel(comm, local_length, global_length, xdata)
     call FN_VDestroy_Parallel(tmp)
-    tmp => FN_VNew_Parallel(comm, local_length, global_length, sunctx)
+    tmp => FN_VNew_Parallel(comm, local_length, global_length)
     call FN_VDestroy_Parallel(tmp)
     tmp => FN_VCloneEmpty_Parallel(x)
     call FN_VDestroy_Parallel(tmp)
@@ -73,7 +75,7 @@ module test_nvector_parallel
     call FN_VSpace_Parallel(x, lenrw, leniw)
     xptr => FN_VGetArrayPointer_Parallel(x)
     call FN_VSetArrayPointer_Parallel(xdata, x)
-    ival = FN_VGetCommunicator_Parallel(x)
+    cptr = FN_VGetCommunicator_Parallel(x)
     ival = FN_VGetLength_Parallel(x)
 
     ! test standard vector operations
@@ -113,8 +115,8 @@ module test_nvector_parallel
     call FN_VDestroy_Parallel(x)
     call FN_VDestroy_Parallel(y)
     call FN_VDestroy_Parallel(z)
-    call FN_VDestroyVectorArray(xvecs, nv)
-    call FN_VDestroyVectorArray(zvecs, nv)
+    call FN_VDestroyVectorArray_Parallel(xvecs, nv)
+    call FN_VDestroyVectorArray_Parallel(zvecs, nv)
 
     ret = 0
 
@@ -138,7 +140,7 @@ module test_nvector_parallel
       stop 1
     endif
 
-    x => FN_VMake_Parallel(comm, local_length, global_length, xdata, sunctx)
+    x => FN_VMake_Parallel(comm, local_length, global_length, xdata)
     call FN_VConst(ONE, x)
 
     !==== tests ====
@@ -156,7 +158,7 @@ end module
 
 integer(C_INT) function check_ans(ans, X, local_length) result(failure)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use test_utilities
   implicit none
 
@@ -178,7 +180,7 @@ end function check_ans
 
 logical function has_data(X) result(failure)
   use, intrinsic :: iso_c_binding
-
+  use fsundials_nvector_mod
   use test_utilities
   implicit none
 
@@ -216,8 +218,6 @@ program main
   !============== Introduction =============
   if (myid == 0) print *, 'Parallel N_Vector Fortran 2003 interface test'
 
-  call Test_Init(comm)
-
   call MPI_Comm_size(comm, nprocs, fails)
   if (fails /= 0) then
     print *, 'FAILURE: MPI_COMM_SIZE returned nonzero, proc', myid
@@ -246,8 +246,6 @@ program main
   else
     if (myid == 0) print *,'    SUCCESS - all unit tests passed'
   end if
-
-  call Test_Finalize()
 
   call MPI_Finalize(fails)
   if (fails /= 0) then

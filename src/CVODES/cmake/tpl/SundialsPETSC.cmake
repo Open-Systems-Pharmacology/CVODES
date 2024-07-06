@@ -2,7 +2,7 @@
 # Programmer(s): Cody J. Balos @ LLNL
 # -----------------------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -49,14 +49,13 @@ endif()
 # Section 3: Find the TPL
 # -----------------------------------------------------------------------------
 
-find_package(PETSC 3.5.0 REQUIRED)
+find_package(PETSC REQUIRED)
 
-message(STATUS "PETSC_DIR:          ${PETSC_DIR}")
-message(STATUS "PETSC_ARCH:         ${PETSC_ARCH}")
-message(STATUS "PETSC_LIBRARIES:    ${PETSC_LIBRARIES}")
-message(STATUS "PETSC_INCLUDE_DIRS: ${PETSC_INCLUDE_DIRS}")
-message(STATUS "PETSC_INDEX_SIZE:   ${PETSC_INDEX_SIZE}")
-message(STATUS "PETSC_PRECISION:    ${PETSC_PRECISION}")
+message(STATUS "PETSC_DIR:         ${PETSC_DIR}")
+message(STATUS "PETSC_LIBRARIES:   ${PETSC_LIBRARIES_}")
+message(STATUS "PETSC_INCLUDES:    ${PETSC_INCLUDES_}")
+message(STATUS "PETSC_INDEX_SIZE:  ${PETSC_INDEX_SIZE}")
+message(STATUS "PETSC_PRECISION:   ${PETSC_PRECISION}\n")
 
 # -----------------------------------------------------------------------------
 # Section 4: Test the TPL

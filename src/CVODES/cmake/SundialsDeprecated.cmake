@@ -2,7 +2,7 @@
 # Programmer(s): Cody J. Balos @ LLNL
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -23,7 +23,15 @@ if(DEFINED F2003_INTERFACE_ENABLE)
   set(BUILD_FORTRAN_MODULE_INTERFACE ${F2003_INTERFACE_ENABLE} CACHE BOOL "Enable Fortran 2003 module interfaces")
 endif()
 
+if(DEFINED F77_INTERFACE_ENABLE)
+  print_warning("The CMake option F77_INTERFACE_ENABLE is deprecated"
+                "Use BUILD_FORTRAN77_INTERFACE instead"
+                MODE DEPRECATION)
+  set(BUILD_FORTRAN77_INTERFACE ${F77_INTERFACE_ENABLE} CACHE BOOL "Enable Fortran 77 interfaces")
+endif()
+
 unset(F2003_INTERFACE_ENABLE CACHE)
+unset(F77_INTERFACE_ENABLE CACHE)
 
 #
 # Deprecated TPL options
@@ -88,22 +96,6 @@ if(DEFINED SUPERLUDIST_ENABLE)
                 MODE DEPRECATION)
   set(ENABLE_SUPERLUDIST ${SUPERLUDIST_ENABLE} CACHE BOOL "Enable SuperLU_DIST support" FORCE)
   unset(SUPERLUDIST_ENABLE CACHE)
-endif()
-
-# Deprecated with SUNDIALS 6.4.0
-if(DEFINED SUPERLUDIST_LIBRARY_DIR)
-  print_warning("The CMake option SUPERLUDIST_LIBRARY_DIR is deprecated"
-                "Use SUPERLUDIST_DIR instead"
-                MODE DEPRECATION)
-  set(SUPERLUDIST_DIR "${SUPERLUDIST_LIBRARY_DIR}/../" CACHE BOOL "SuperLU_DIST root directory" FORCE)
-  unset(SUPERLUDIST_LIBRARY_DIR CACHE)
-endif()
-if(DEFINED SUPERLUDIST_INCLUDE_DIR)
-  print_warning("The CMake option SUPERLUDIST_INCLUDE_DIR is deprecated"
-                "Use SUPERLUDIST_INCLUDE_DIRS instead"
-                MODE DEPRECATION)
-  set(SUPERLUDIST_INCLUDE_DIRS "${SUPERLUDIST_INCLUDE_DIR}" CACHE BOOL "SuperLU_DIST include directoroes" FORCE)
-  unset(SUPERLUDIST_INCLUDE_DIR CACHE)
 endif()
 
 if(DEFINED SUPERLUMT_ENABLE)

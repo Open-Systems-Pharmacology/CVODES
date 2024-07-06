@@ -2,7 +2,7 @@
 # Programmer(s): Daniel R. Reynolds @ SMU
 # ---------------------------------------------------------------
 # SUNDIALS Copyright Start
-# Copyright (c) 2002-2024, Lawrence Livermore National Security
+# Copyright (c) 2002-2021, Lawrence Livermore National Security
 # and Southern Methodist University.
 # All rights reserved.
 #
@@ -30,10 +30,22 @@ set(sunlinsol_superlumt_examples
 # Dependencies for nvector examples
 set(sunlinsol_superlumt_dependencies
   test_sunlinsol
+  sundials_nvector
+  sundials_matrix
+  sundials_linearsolver
 )
 
 # Add source directory to include directories
 include_directories(. ..)
+
+# Specify libraries to link against
+set(NVECS_LIB sundials_nvecserial)
+set(SUNMATS_LIB sundials_sunmatrixdense)
+list(APPEND SUNMATS_LIB sundials_sunmatrixsparse)
+set(SUNLINSOLS_LIB sundials_sunlinsolsuperlumt)
+
+# Set-up linker flags and link libraries
+set(SUNDIALS_LIBS ${NVECS_LIB} ${SUNMATS_LIB} ${SUNLINSOLS_LIB} ${EXTRA_LINK_LIBS})
 
 # Add the build and install targets for each example
 foreach(example_tuple ${sunlinsol_superlumt_examples})
@@ -53,12 +65,7 @@ foreach(example_tuple ${sunlinsol_superlumt_examples})
     set_target_properties(${example} PROPERTIES FOLDER "Examples")
 
     # libraries to link against
-    target_link_libraries(${example}
-      sundials_nvecserial
-      sundials_sunmatrixdense
-      sundials_sunmatrixsparse
-      sundials_sunlinsolsuperlumt
-      ${EXE_EXTRA_LINK_LIBS})
+    target_link_libraries(${example} ${SUNDIALS_LIBS})
   endif()
 
   # check if example args are provided and set the test name
@@ -78,6 +85,9 @@ foreach(example_tuple ${sunlinsol_superlumt_examples})
     install(FILES ${example}.c
       ../test_sunlinsol.h
       ../test_sunlinsol.c
+      ../../../src/sundials/sundials_matrix.c
+      ../../../src/sundials/sundials_linearsolver.c
+      ../../../src/sundials/sundials_nvector.c
       DESTINATION ${EXAMPLES_INSTALL_PATH}/sunlinsol/superlumt)
   endif()
 

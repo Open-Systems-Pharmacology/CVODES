@@ -2,7 +2,7 @@
 ! Programmer(s): Cody J. Balos @ LLNL
 ! -----------------------------------------------------------------
 ! SUNDIALS Copyright Start
-! Copyright (c) 2002-2024, Lawrence Livermore National Security
+! Copyright (c) 2002-2021, Lawrence Livermore National Security
 ! and Southern Methodist University.
 ! All rights reserved.
 !
@@ -17,9 +17,9 @@
 
 module test_fsunnonlinsol_newton
   use, intrinsic :: iso_c_binding
-
-
-
+  use fsundials_matrix_mod
+  use fsundials_nvector_mod
+  use fsundials_linearsolver_mod
   use test_utilities
 
   implicit none
@@ -47,7 +47,10 @@ contains
 
   integer(C_INT) function unit_tests() result(retval)
     use, intrinsic :: iso_c_binding
-    use fsundials_core_mod
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
+    use fsundials_linearsolver_mod
+    use fsundials_nonlinearsolver_mod
     use fnvector_serial_mod
     use fsunmatrix_dense_mod
     use fsunlinsol_dense_mod
@@ -67,7 +70,7 @@ contains
     allocate(Imem)
 
     ! create vectors
-    Imem%y0   => FN_VNew_Serial(NEQ, sunctx)
+    Imem%y0   => FN_VNew_Serial(NEQ)
     Imem%ycur => FN_VClone(Imem%y0)
     Imem%ycor => FN_VClone(Imem%y0)
     Imem%w    => FN_VClone(Imem%y0)
@@ -83,8 +86,8 @@ contains
     call FN_VConst(ONE, Imem%w)
 
     ! create matrix and linear solver
-    Imem%A  => FSUNDenseMatrix(NEQ, NEQ, sunctx)
-    Imem%LS => FSUNLinSol_Dense(Imem%y0, Imem%A, sunctx)
+    Imem%A  => FSUNDenseMatrix(NEQ, NEQ)
+    Imem%LS => FSUNLinSol_Dense(Imem%y0, Imem%A)
 
     retval = FSUNLinSolInitialize(Imem%LS)
     if (retval /= 0) then
@@ -93,7 +96,7 @@ contains
     end if
 
     ! create and test NLS
-    NLS => FSUNNonlinsol_Newton(Imem%y0, sunctx)
+    NLS => FSUNNonlinsol_Newton(Imem%y0)
 
     retval = FSUNNonlinSolSetSysFn(NLS, c_funloc(Res))
     if (retval /= 0) then
@@ -172,8 +175,8 @@ contains
   integer(C_INT) function LSetup(jbad, jcur, mem) &
     result(retval) bind(C)
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_linearsolver_mod
+    use fsundials_nvector_mod
 
     implicit none
 
@@ -206,8 +209,8 @@ contains
   integer(C_INT) function LSolve(b, mem) &
     result(retval) bind(C)
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_linearsolver_mod
+    use fsundials_nvector_mod
 
     implicit none
 
@@ -226,8 +229,8 @@ contains
   integer(C_INT) function ConvTest(NLS, y, del, tol, ewt, mem) &
     result(retval) bind(C)
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_nvector_mod
+    use fsundials_nonlinearsolver_mod
 
     implicit none
 
@@ -241,7 +244,7 @@ contains
     delnrm = FN_VWrmsNorm(del, ewt)
 
     if (delnrm <= tol) then
-      retval = SUN_SUCCESS  ! converged
+      retval = SUN_NLS_SUCCESS  ! converged
     else
       retval = SUN_NLS_CONTINUE ! not converged
     end if
@@ -251,7 +254,7 @@ contains
   integer(C_INT) function Res(ycor, f, mem) &
     result(retval) bind(C)
     use, intrinsic :: iso_c_binding
-
+    use fsundials_nvector_mod
 
     implicit none
 
@@ -285,8 +288,8 @@ contains
   integer(C_INT) function Jac(t, y, fy, J, user_data, tmp1, tmp2, tmp3) &
     result(retval) bind(C)
     use, intrinsic :: iso_c_binding
-
-
+    use fsundials_nvector_mod
+    use fsundials_matrix_mod
     use fsunmatrix_dense_mod
 
     implicit none
@@ -330,8 +333,6 @@ program main
   !============== Introduction =============
   print *, 'Newton SUNNonlinearSolver Fortran 2003 interface test'
 
-  call Test_Init(SUN_COMM_NULL)
-
   retval = unit_tests()
   if (retval /= 0) then
     print *, 'FAILURE: n unit tests failed'
@@ -339,7 +340,5 @@ program main
   else
     print *,'SUCCESS: all unit tests passed'
   end if
-
-  call Test_Finalize()
 
 end program main

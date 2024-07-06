@@ -2,7 +2,7 @@
  * Programmer(s): Cody J. Balos @ LLNL
  * -----------------------------------------------------------------
  * SUNDIALS Copyright Start
- * Copyright (c) 2002-2024, Lawrence Livermore National Security
+ * Copyright (c) 2002-2021, Lawrence Livermore National Security
  * and Southern Methodist University.
  * All rights reserved.
  *
@@ -14,221 +14,200 @@
  * SUNDIALS memory helper.
  * ----------------------------------------------------------------*/
 
-#include "sundials/sundials_memory.h"
-
 #include <string.h>
-#include <sundials/priv/sundials_errors_impl.h>
-#include <sundials/sundials_core.h>
 
-#include "sundials/sundials_errors.h"
-#include "sundials/sundials_types.h"
 #include "sundials_debug.h"
+#include <sundials/sundials_memory.h>
 
-#if defined(SUNDIALS_BUILD_WITH_PROFILING)
-static SUNProfiler getSUNProfiler(SUNMemoryHelper H)
+
+SUNMemory SUNMemoryNewEmpty()
 {
-  return (H->sunctx->profiler);
-}
-#endif
-
-SUNMemory SUNMemoryNewEmpty(SUNContext sunctx)
-{
-  SUNFunctionBegin(sunctx);
-
   SUNMemory mem = NULL;
 
-  mem = (SUNMemory)malloc(sizeof(struct SUNMemory_));
-  SUNAssertNull(mem, SUN_ERR_MALLOC_FAIL);
+  mem = (SUNMemory) malloc(sizeof(struct _SUNMemory));
+  if (mem == NULL)
+  {
+    SUNDIALS_DEBUG_PRINT("ERROR in SUNMemoryNewEmpty: malloc failed\n");
+    return(NULL);
+  }
 
-  mem->bytes = 0;
-
-  return (mem);
+  return(mem);
 }
 
-SUNMemoryHelper SUNMemoryHelper_NewEmpty(SUNContext sunctx)
-{
-  if (sunctx == NULL) { return NULL; }
 
-  SUNFunctionBegin(sunctx);
+SUNMemoryHelper SUNMemoryHelper_NewEmpty()
+{
   SUNMemoryHelper helper = NULL;
 
-  helper = (SUNMemoryHelper)malloc(sizeof(struct SUNMemoryHelper_));
-  SUNAssertNull(helper, SUN_ERR_MALLOC_FAIL);
+  helper = (SUNMemoryHelper) malloc(sizeof(struct _SUNMemoryHelper));
+  if (helper == NULL)
+  {
+    SUNDIALS_DEBUG_PRINT("ERROR in SUNMemoryHelper_NewEmpty: malloc failed\n");
+    return(NULL);
+  }
 
-  helper->ops = (SUNMemoryHelper_Ops)malloc(sizeof(struct SUNMemoryHelper_Ops_));
-  SUNAssertNull(helper->ops, SUN_ERR_MALLOC_FAIL);
+  helper->ops = (SUNMemoryHelper_Ops) malloc(sizeof(struct _SUNMemoryHelper_Ops));
+  if (helper->ops == NULL)
+  {
+    SUNDIALS_DEBUG_PRINT("ERROR in SUNMemoryHelper_NewEmpty: malloc failed\n");
+    free(helper);
+    return(NULL);
+  }
 
   /* Set all ops to NULL */
-  memset(helper->ops, 0, sizeof(struct SUNMemoryHelper_Ops_));
+  memset(helper->ops, 0, sizeof(struct _SUNMemoryHelper_Ops));
   helper->content = NULL;
-  helper->sunctx  = sunctx;
 
-  return helper;
+  return(helper);
 }
 
-SUNErrCode SUNMemoryHelper_CopyOps(SUNMemoryHelper src, SUNMemoryHelper dst)
+
+int SUNMemoryHelper_CopyOps(SUNMemoryHelper src, SUNMemoryHelper dst)
 {
-  memcpy(dst->ops, src->ops, sizeof(struct SUNMemoryHelper_Ops_));
-  return SUN_SUCCESS;
+  /* Check that ops structures exist */
+  if (src == NULL || dst == NULL || src->ops == NULL || dst->ops == NULL)
+    return(-1);
+  memcpy(dst->ops, src->ops, sizeof(struct _SUNMemoryHelper_Ops));
+  return(0);
 }
 
-sunbooleantype SUNMemoryHelper_ImplementsRequiredOps(SUNMemoryHelper helper)
+
+booleantype SUNMemoryHelper_ImplementsRequiredOps(SUNMemoryHelper helper)
 {
   if (helper->ops->alloc == NULL || helper->ops->dealloc == NULL ||
       helper->ops->copy == NULL)
   {
-    return SUNFALSE;
+    return(SUNFALSE);
   }
-  return SUNTRUE;
+  return(SUNTRUE);
 }
 
-SUNMemory SUNMemoryHelper_Alias(SUNMemoryHelper helper, SUNMemory mem)
-{
-  SUNFunctionBegin(helper->sunctx);
 
-  SUNMemory alias = SUNMemoryNewEmpty(helper->sunctx);
-  SUNCheckLastErrNull();
+SUNMemory SUNMemoryHelper_Alias(SUNMemory mem)
+{
+  SUNMemory alias = SUNMemoryNewEmpty();
 
   alias->ptr  = mem->ptr;
   alias->type = mem->type;
   alias->own  = SUNFALSE;
 
-  return alias;
+  return(alias);
 }
 
-SUNMemory SUNMemoryHelper_Wrap(SUNMemoryHelper helper, void* ptr,
-                               SUNMemoryType mem_type)
+
+SUNMemory SUNMemoryHelper_Wrap(void* ptr, SUNMemoryType mem_type)
 {
-  SUNFunctionBegin(helper->sunctx);
+  SUNMemory mem = SUNMemoryNewEmpty();
 
-  SUNCheckNull(mem_type == SUNMEMTYPE_HOST || mem_type == SUNMEMTYPE_PINNED ||
-                 mem_type == SUNMEMTYPE_DEVICE || mem_type == SUNMEMTYPE_UVM,
-               SUN_ERR_ARG_OUTOFRANGE);
+  mem->ptr = ptr;
+  mem->own = SUNFALSE;
 
-  SUNMemory mem = SUNMemoryNewEmpty(helper->sunctx);
-  SUNCheckLastErrNull();
-
-  mem->ptr  = ptr;
-  mem->own  = SUNFALSE;
-  mem->type = mem_type;
-
-  return mem;
-}
-
-SUNErrCode SUNMemoryHelper_GetAllocStats(SUNMemoryHelper helper,
-                                         SUNMemoryType mem_type,
-                                         unsigned long* num_allocations,
-                                         unsigned long* num_deallocations,
-                                         size_t* bytes_allocated,
-                                         size_t* bytes_high_watermark)
-{
-  SUNErrCode ier = SUN_SUCCESS;
-  SUNFunctionBegin(helper->sunctx);
-  SUNAssert(helper->ops->getallocstats, SUN_ERR_NOT_IMPLEMENTED);
-  SUNDIALS_MARK_FUNCTION_BEGIN(getSUNProfiler(helper));
-  ier = helper->ops->getallocstats(helper, mem_type, num_allocations,
-                                   num_deallocations, bytes_allocated,
-                                   bytes_high_watermark);
-  SUNDIALS_MARK_FUNCTION_END(getSUNProfiler(helper));
-  return (ier);
-}
-
-SUNErrCode SUNMemoryHelper_Alloc(SUNMemoryHelper helper, SUNMemory* memptr,
-                                 size_t mem_size, SUNMemoryType mem_type,
-                                 void* queue)
-{
-  SUNErrCode ier = SUN_SUCCESS;
-  SUNFunctionBegin(helper->sunctx);
-  SUNAssert(helper->ops->alloc, SUN_ERR_NOT_IMPLEMENTED);
-  SUNDIALS_MARK_FUNCTION_BEGIN(getSUNProfiler(helper));
-  ier = helper->ops->alloc(helper, memptr, mem_size, mem_type, queue);
-  SUNDIALS_MARK_FUNCTION_END(getSUNProfiler(helper));
-  return ier;
-}
-
-SUNErrCode SUNMemoryHelper_Dealloc(SUNMemoryHelper helper, SUNMemory mem,
-                                   void* queue)
-{
-  SUNErrCode ier = SUN_SUCCESS;
-  SUNFunctionBegin(helper->sunctx);
-  SUNAssert(helper->ops->dealloc, SUN_ERR_NOT_IMPLEMENTED);
-  SUNDIALS_MARK_FUNCTION_BEGIN(getSUNProfiler(helper));
-  if (!mem) { ier = SUN_SUCCESS; }
-  else { ier = helper->ops->dealloc(helper, mem, queue); }
-  SUNDIALS_MARK_FUNCTION_END(getSUNProfiler(helper));
-  return ier;
-}
-
-SUNErrCode SUNMemoryHelper_Copy(SUNMemoryHelper helper, SUNMemory dst,
-                                SUNMemory src, size_t memory_size, void* queue)
-{
-  SUNErrCode ier = SUN_SUCCESS;
-  SUNFunctionBegin(helper->sunctx);
-  SUNAssert(helper->ops->copy, SUN_ERR_NOT_IMPLEMENTED);
-  SUNDIALS_MARK_FUNCTION_BEGIN(getSUNProfiler(helper));
-  ier = helper->ops->copy(helper, dst, src, memory_size, queue);
-  SUNDIALS_MARK_FUNCTION_END(getSUNProfiler(helper));
-  return ier;
-}
-
-SUNErrCode SUNMemoryHelper_CopyAsync(SUNMemoryHelper helper, SUNMemory dst,
-                                     SUNMemory src, size_t memory_size,
-                                     void* queue)
-{
-  SUNErrCode ier = SUN_SUCCESS;
-  SUNDIALS_MARK_FUNCTION_BEGIN(getSUNProfiler(helper));
-  if (!helper->ops->copyasync)
+  switch(mem_type)
   {
-    ier = SUNMemoryHelper_Copy(helper, dst, src, memory_size, queue);
-  }
-  else { ier = helper->ops->copyasync(helper, dst, src, memory_size, queue); }
-  SUNDIALS_MARK_FUNCTION_END(getSUNProfiler(helper));
-  return ier;
-}
-
-SUNErrCode SUNMemoryHelper_Destroy(SUNMemoryHelper helper)
-{
-  SUNErrCode err = SUN_SUCCESS;
-  SUNFunctionBegin(helper->sunctx);
-
-  if (!helper) { return err; }
-
-  if (helper->content)
-  {
-    SUNAssert(helper->ops->destroy, SUN_ERR_NOT_IMPLEMENTED);
+    case SUNMEMTYPE_HOST:
+      mem->type = SUNMEMTYPE_HOST;
+      break;
+    case SUNMEMTYPE_PINNED:
+      mem->type = SUNMEMTYPE_PINNED;
+      break;
+    case SUNMEMTYPE_DEVICE:
+      mem->type = SUNMEMTYPE_DEVICE;
+      break;
+    case SUNMEMTYPE_UVM:
+      mem->type = SUNMEMTYPE_UVM;
+      break;
+    default:
+      free(mem);
+      SUNDIALS_DEBUG_PRINT("ERROR in SUNMemoryHelper_Wrap: unknown memory type\n");
+      return(NULL);
   }
 
-  if (helper->ops->destroy)
-  {
-    /* user helper defined destroy */
-    err = helper->ops->destroy(helper);
-  }
-  else
-  {
-    /* default destroy */
-    free(helper->ops);
-    free(helper);
-  }
-
-  return err;
+  return(mem);
 }
 
-SUNMemoryHelper SUNMemoryHelper_Clone(SUNMemoryHelper helper)
+
+int SUNMemoryHelper_Alloc(SUNMemoryHelper helper, SUNMemory* memptr,
+                          size_t memsize, SUNMemoryType mem_type)
 {
-  SUNFunctionBegin(helper->sunctx);
-  if (!helper->ops->clone)
+  if (helper->ops->alloc == NULL)
+    return(-1);
+  return(helper->ops->alloc(helper, memptr, memsize, mem_type));
+}
+
+
+int SUNMemoryHelper_Dealloc(SUNMemoryHelper helper, SUNMemory mem)
+{
+  if (helper->ops->dealloc == NULL)
+    return(-1);
+  if (mem == NULL)
+    return(0);
+  return(helper->ops->dealloc(helper, mem));
+}
+
+
+int SUNMemoryHelper_Copy(SUNMemoryHelper helper, SUNMemory dst,
+                         SUNMemory src, size_t memory_size)
+{
+  if (helper->ops->copy == NULL)
   {
-    if (helper->content)
+    SUNDIALS_DEBUG_PRINT("ERROR in SUNMemoryHelper_Copy: function pointer is NULL\n");
+    return(-1);
+  }
+  return(helper->ops->copy(helper, dst, src, memory_size));
+}
+
+
+int SUNMemoryHelper_CopyAsync(SUNMemoryHelper helper, SUNMemory dst,
+                              SUNMemory src, size_t memory_size,
+                              void* ctx)
+{
+  if (helper->ops->copyasync == NULL)
+  {
+    return(SUNMemoryHelper_Copy(helper, dst, src, memory_size));
+  }
+  return(helper->ops->copyasync(helper, dst, src, memory_size, ctx));
+}
+
+
+int SUNMemoryHelper_Destroy(SUNMemoryHelper helper)
+{
+  if (helper->ops->destroy == NULL)
+  {
+    if (helper->content != NULL)
     {
-      SUNAssertNull(helper->ops->clone, SUN_ERR_NOT_IMPLEMENTED);
-      return (NULL);
+      return(-1);
     }
     else
     {
-      SUNMemoryHelper hclone = SUNMemoryHelper_NewEmpty(helper->sunctx);
-      if (hclone) { SUNMemoryHelper_CopyOps(helper, hclone); }
-      return (hclone);
+      free(helper->ops);
+      free(helper);
     }
   }
-  else { return (helper->ops->clone(helper)); }
+  else
+  {
+    return(helper->ops->destroy(helper));
+  }
+  return(0);
+}
+
+
+SUNMemoryHelper SUNMemoryHelper_Clone(SUNMemoryHelper helper)
+{
+  if (helper->ops->clone == NULL)
+  {
+    if (helper->content != NULL)
+    {
+      return(NULL);
+    }
+    else
+    {
+      SUNMemoryHelper hclone = SUNMemoryHelper_NewEmpty();
+      if (hclone) SUNMemoryHelper_CopyOps(helper, hclone);
+      return(hclone);
+    }
+  }
+  else
+  {
+    return(helper->ops->clone(helper));
+  }
 }
