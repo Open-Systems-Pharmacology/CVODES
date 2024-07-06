@@ -1,4 +1,5 @@
 @echo off
+setlocal
 
 if not exist BuildCVODES_Windows mkdir BuildCVODES_Windows
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
@@ -36,7 +37,9 @@ for %%T in (Debug Release) do (
     IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
 )
 
-for /R BuildCVODES_Windows\Debug\x64\bin %%F in (*.lib) do copy "%%F" Dist\Windows\Debug\x64\
+for /R BuildCVODES_Windows\Debug\x64 %%F in (*.lib) do copy "%%F" Dist\Windows\Debug\x64\
 IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
-for /R BuildCVODES_Windows\Release\x64\bin %%F in (*.lib) do copy "%%F" Dist\Windows\Release\x64\
+for /R BuildCVODES_Windows\Release\x64 %%F in (*.lib) do copy "%%F" Dist\Windows\Release\x64\
 IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+
+endlocal
