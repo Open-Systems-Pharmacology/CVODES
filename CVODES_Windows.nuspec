@@ -12,7 +12,7 @@
     <iconUrl>https://raw.githubusercontent.com/Open-Systems-Pharmacology/Suite/master/logo.png</iconUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <copyright>Copyright (c) 2002-2019, Lawrence Livermore National Security and Southern Methodist University</copyright>
-    <tags>open-systems-pharmacology</tags>
+    <tags>open-systems-pharmacology native</tags>
   </metadata>
   <files>
     <file src="src\CVODES\include\" target="CVODES\include" />
