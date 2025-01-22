@@ -1,5 +1,5 @@
 /Make_CVODES.txt
-/BuildCVODES_Windows
-/BuildCVODES_Linux
+/BuildCVODES_*
 /INSTALL_GUIDE.pdf
 /Dist
+*.nupkg

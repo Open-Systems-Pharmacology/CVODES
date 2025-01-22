@@ -1,6 +1,7 @@
 image: 
-- Visual Studio 2022
+- macOS
 - Ubuntu2204
+- Visual Studio 2022
 
 environment:
   major: 5
@@ -12,14 +13,14 @@ version: "$(major).$(minor).$(release).{build}"
 
 build_script:
   - cmd: build_Windows.bat
-  - sh: chmod ugo+x build_Linux.sh
-  - sh: ./build_Linux.sh
+  - sh: chmod ugo+x buildNix.sh
+  - sh: ./buildNix.sh
 
 
 after_build:
   - cmd: createNugetPackage_Windows.bat %app_version%
-  - sh: chmod ugo+x createNugetPackage_Linux.sh
-  - sh: ./createNugetPackage_Linux.sh $app_version
+  - sh: chmod ugo+x createNugetPackage_Nix.sh
+  - sh: ./createNugetPackage_Nix.sh $app_version
   - ps: Get-ChildItem .\CVODES*.nupkg | % { Push-AppveyorArtifact $_.FullName -FileName $_.Name }
 
 skip_tags: true

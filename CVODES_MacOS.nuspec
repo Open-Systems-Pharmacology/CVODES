@@ -2,7 +2,7 @@
 <package >
   <metadata>    
     <description>Sundials CVODES Solver built for the Open Systems Pharmacology Suite.</description>
-    <id>CVODES.Windows</id>
+    <id>CVODES.MacOS</id>
     <version>$version$</version>
     <title>CVODES</title>
     <authors>Open-Systems-Pharmacology</authors>
@@ -15,9 +15,10 @@
     <tags>open-systems-pharmacology native</tags>
   </metadata>
   <files>
-    <file src="src\CVODES\include\" target="CVODES\include" />
-	  <file src="BuildCVODES_Windows\Release\x64\include\sundials\*.h" target="CVODES\include\sundials" />
-    <file src="Dist\Windows\Release\x64\*.lib" target="CVODES\bin\native\x64\Release" />
-    <file src="Dist\Windows\Debug\x64\*.lib" target="CVODES\bin\native\x64\Debug" />
+    <file src="src/CVODES/include/**/*.h" target="CVODES/include" />
+	<file src="BuildCVODES_MacOS/Release/x64/include/sundials/*.h" target="CVODES/include/sundials" />
+
+	<file src="Dist/MacOS/Release/x64/*.a" target="CVODES/bin/native/x64/Release" />
+	<file src="Dist/MacOS/Debug/x64/*.a" target="CVODES/bin/native/x64/Debug" />
   </files>
 </package>
