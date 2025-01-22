@@ -33,7 +33,7 @@ do
     make -C BuildCVODES_${Platform}/${BuildType}/x64/
     
     mkdir -p Dist/${Platform}/${BuildType}/x64
-    find . -name lib*.a -exec cp {} Dist/${Platform}/${BuildType}/x64/ \;
+    find ./BuildCVODES_${Platform} -name lib*.a -exec cp {} Dist/${Platform}/${BuildType}/x64/ \;
 done
 
 
