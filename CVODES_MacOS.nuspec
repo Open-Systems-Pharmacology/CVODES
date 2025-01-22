@@ -2,7 +2,7 @@
 <package >
   <metadata>    
     <description>Sundials CVODES Solver built for the Open Systems Pharmacology Suite.</description>
-    <id>CVODES.Ubuntu22</id>
+    <id>CVODES.MacOS</id>
     <version>$version$</version>
     <title>CVODES</title>
     <authors>Open-Systems-Pharmacology</authors>
@@ -16,9 +16,9 @@
   </metadata>
   <files>
     <file src="src/CVODES/include/**/*.h" target="CVODES/include" />
-	<file src="BuildCVODES_Ubuntu22/Release/x64/include/sundials/*.h" target="CVODES/include/sundials" />
+	<file src="BuildCVODES_MacOS/Release/x64/include/sundials/*.h" target="CVODES/include/sundials" />
 
-	<file src="Dist/Ubuntu22/Release/x64/*.a" target="CVODES/bin/native/x64/Release" />
-	<file src="Dist/Ubuntu22/Debug/x64/*.a" target="CVODES/bin/native/x64/Debug" />
+	<file src="Dist/MacOS/Release/x64/*.a" target="CVODES/bin/native/x64/Release" />
+	<file src="Dist/MacOS/Debug/x64/*.a" target="CVODES/bin/native/x64/Debug" />
   </files>
 </package>
