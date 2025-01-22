@@ -16,9 +16,8 @@
   </metadata>
   <files>
     <file src="src\CVODES\include\" target="CVODES\include" />
-	<file src="BuildCVODES_Windows\Release\x64\include\sundials\*.h" target="CVODES\include\sundials" />
-
-	<file src="Dist\Windows\Release\x64\*.lib" target="CVODES\bin\native\x64\Release" />
-	<file src="Dist\Windows\Debug\x64\*.lib" target="CVODES\bin\native\x64\Debug" />
+	  <file src="BuildCVODES_Windows\Release\x64\include\sundials\*.h" target="CVODES\include\sundials" />
+    <file src="Dist\Windows\Release\x64\*.lib" target="CVODES\bin\native\x64\Release" />
+    <file src="Dist\Windows\Debug\x64\*.lib" target="CVODES\bin\native\x64\Debug" />
   </files>
 </package>

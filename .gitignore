@@ -3,3 +3,4 @@
 /BuildCVODES_Linux
 /INSTALL_GUIDE.pdf
 /Dist
+*.nupkg
