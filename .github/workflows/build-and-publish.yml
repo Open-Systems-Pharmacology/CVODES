@@ -210,10 +210,12 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: build release and debug
-        run:  start ./build_Windows.bat
+        run:  ./build_Windows.bat
+        shell: cmd
 
       - name: Pack the project
-        run: start ./createNugetPackage_Windows.bat ${{env.APP_VERSION}}
+        run: ./createNugetPackage_Windows.bat ${{env.APP_VERSION}}
+        shell: cmd
 
       - name: Push nupkg as artefact
         # if it is a push to a branch
