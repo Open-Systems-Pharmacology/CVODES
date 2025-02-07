@@ -102,7 +102,7 @@ jobs:
           chmod ugo+x createNugetPackage_Nix.sh
           ./createNugetPackage_Nix.sh ${{env.APP_VERSION}}
 
-      - name: Push nupkg as artefact
+      - name: Push nupkg as artifact
         # if it is a push to a branch
         if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
         uses: actions/upload-artifact@v4
@@ -140,7 +140,7 @@ jobs:
           chmod ugo+x createNugetPackage_Nix.sh
           ./createNugetPackage_Nix.sh ${{env.APP_VERSION}}
 
-      - name: Push nupkg as artefact
+      - name: Push nupkg as artifact
         # if it is a push to a branch
         if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
         uses: actions/upload-artifact@v4
@@ -178,7 +178,7 @@ jobs:
           chmod ugo+x createNugetPackage_Nix.sh
           ./createNugetPackage_Nix.sh ${{env.APP_VERSION}}
 
-      - name: Push nupkg as artefact
+      - name: Push nupkg as artifact
         # if it is a push to a branch
         if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
         uses: actions/upload-artifact@v4
@@ -241,7 +241,7 @@ jobs:
         run: ./createNugetPackage_Windows.bat ${{env.APP_VERSION}}
         shell: cmd
 
-      - name: Push nupkg as artefact
+      - name: Push nupkg as artifact
         # if it is a push to a branch
         if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
         uses: actions/upload-artifact@v4
