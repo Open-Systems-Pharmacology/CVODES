@@ -221,9 +221,10 @@ jobs:
           IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
           mkdir Dist\Windows\Debug\x64
           IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+        shell: cmd
 
       - name: build release
-        run:  |
+        run: |
           if not exist BuildCVODES_Windows mkdir BuildCVODES_Windows
           echo Compiling for build type = Release   
           cmake -BBuildCVODES_Windows/Release/x64/ -Hsrc/CVODES/ -DCMAKE_BUILD_TYPE=Release -DEXAMPLES_ENABLE_C=OFF -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DENABLE_KLU=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DKLU_INCLUDE_DIR=BuildSuiteSparse/include/ -DKLU_LIBRARY_DIR=BuildSuiteSparse/lib64/ -DCMAKE_C_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Oi"
