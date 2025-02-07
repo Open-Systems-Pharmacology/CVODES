@@ -209,8 +209,31 @@ jobs:
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      - name: build release and debug
-        run:  ./build_Windows.bat
+      - name: build debug
+        run: |
+          if not exist BuildCVODES_Windows mkdir BuildCVODES_Windows
+          echo Compiling for build type = Debug   
+          cmake -BBuildCVODES_Windows/Debug/x64/ -Hsrc/CVODES/ -DCMAKE_BUILD_TYPE=Debug -DEXAMPLES_ENABLE_C=OFF -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DENABLE_KLU=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DKLU_INCLUDE_DIR=BuildSuiteSparse/include/ -DKLU_LIBRARY_DIR=BuildSuiteSparse/lib64/ -DCMAKE_C_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Oi"
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+          msbuild BuildCVODES_Windows/Debug/x64/ALL_BUILD.vcxproj /property:Configuration=Debug
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+          if exist Dist\Windows\Debug\x64 rmdir /S /Q Dist\Windows\Debug\x64
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+          mkdir Dist\Windows\Debug\x64
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+
+      - name: build release
+        run:  |
+          if not exist BuildCVODES_Windows mkdir BuildCVODES_Windows
+          echo Compiling for build type = Release   
+          cmake -BBuildCVODES_Windows/Release/x64/ -Hsrc/CVODES/ -DCMAKE_BUILD_TYPE=Release -DEXAMPLES_ENABLE_C=OFF -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DENABLE_KLU=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DKLU_INCLUDE_DIR=BuildSuiteSparse/include/ -DKLU_LIBRARY_DIR=BuildSuiteSparse/lib64/ -DCMAKE_C_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Oi"
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+          msbuild BuildCVODES_Windows/Release/x64/ALL_BUILD.vcxproj /property:Configuration=Release
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+          if exist Dist\Windows\Release\x64 rmdir /S /Q Dist\Windows\Release\x64
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+          mkdir Dist\Windows\Release\x64
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
         shell: cmd
 
       - name: Pack the project
