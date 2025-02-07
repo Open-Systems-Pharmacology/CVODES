@@ -1,3 +1,4 @@
+@echo off
 setlocal
 
 if not exist BuildCVODES_Windows mkdir BuildCVODES_Windows
