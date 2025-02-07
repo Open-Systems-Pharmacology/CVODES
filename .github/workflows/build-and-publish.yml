@@ -210,7 +210,7 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: build release and debug
-        run:  build_Windows.bat
+        run:  ./build_Windows.bat
 
       - name: Pack the project
         run: createNugetPackage_Windows.bat ${{env.APP_VERSION}}
