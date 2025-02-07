@@ -213,7 +213,7 @@ jobs:
         run:  start ./build_Windows.bat
 
       - name: Pack the project
-        run: createNugetPackage_Windows.bat ${{env.APP_VERSION}}
+        run: start ./createNugetPackage_Windows.bat ${{env.APP_VERSION}}
 
       - name: Push nupkg as artefact
         # if it is a push to a branch
