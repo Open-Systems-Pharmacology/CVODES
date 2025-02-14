@@ -14,6 +14,7 @@ env:
   RUN: ${{ github.run_number }}
 
 jobs:
+
   get-version:
     runs-on: ubuntu-latest
     outputs:
@@ -77,8 +78,18 @@ jobs:
         echo "APP_VERSION=${app_version}" >> $GITHUB_ENV
         echo "::set-output name=APP_VERSION::${app_version}"
 
-  build-macos-arm64:
-    runs-on: macos-latest
+  build-nix:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            nuget_package: CVODES.MacOS.Arm64
+          - os: macos-13
+            nuget_package: CVODES.MacOS.x64
+          - os: ubuntu-22.04
+            nuget_package: CVODES.Ubuntu22
+
+    runs-on: ${{ matrix.os }}
     needs: get-version
     
     steps:
@@ -107,7 +118,7 @@ jobs:
         if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
         uses: actions/upload-artifact@v4
         with:
-          name: CVODES.MacOS.Arm64
+          name: ${{ matrix.nuget_package }}
           path: ./*.nupkg
 
       - name: Publish to GitHub registry
@@ -115,81 +126,6 @@ jobs:
         if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
         run: dotnet nuget push ./*.nupkg --source https://nuget.pkg.github.com/${{github.repository_owner}}/index.json --api-key ${{ secrets.GITHUB_TOKEN }}
 
-  build-macos-x64:
-    runs-on: macos-13
-    needs: get-version
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: 'true'
-
-      - name: define env variables
-        run: |
-          echo "APP_VERSION=${{needs.get-version.outputs.APP_VERSION}}" >> $GITHUB_ENV
-          echo "BUILD_ID=${{needs.get-version.outputs.BUILD_ID}}" >> $GITHUB_ENV
-      
-      - name: Build native libraries
-        run: |
-          chmod ugo+x buildNix.sh
-          ./buildNix.sh
-          
-      - name: Pack the project        
-        run: |
-          chmod ugo+x createNugetPackage_Nix.sh
-          ./createNugetPackage_Nix.sh ${{env.APP_VERSION}}
-
-      - name: Push nupkg as artifact
-        # if it is a push to a branch
-        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
-        uses: actions/upload-artifact@v4
-        with:
-          name: CVODES.MacOS.x64
-          path: ./*.nupkg
-
-      - name: Publish to GitHub registry
-        # if it is a merge to default branch
-        if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        run: dotnet nuget push ./*.nupkg --source https://nuget.pkg.github.com/${{github.repository_owner}}/index.json --api-key ${{ secrets.GITHUB_TOKEN }}
-
-  build-linux-x64:
-    runs-on: ubuntu-22.04
-    needs: get-version
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: 'true'
-
-      - name: define env variables
-        run: |
-          echo "APP_VERSION=${{needs.get-version.outputs.APP_VERSION}}" >> $GITHUB_ENV
-          echo "BUILD_ID=${{needs.get-version.outputs.BUILD_ID}}" >> $GITHUB_ENV
-      
-      - name: Build native libraries
-        run: |
-          chmod ugo+x buildNix.sh
-          ./buildNix.sh
-          
-      - name: Pack the project        
-        run: |
-          chmod ugo+x createNugetPackage_Nix.sh
-          ./createNugetPackage_Nix.sh ${{env.APP_VERSION}}
-
-      - name: Push nupkg as artifact
-        # if it is a push to a branch
-        if: github.event_name == 'push' && github.ref_name != github.event.repository.default_branch
-        uses: actions/upload-artifact@v4
-        with:
-          name: CVODES.Ubuntu22
-          path: ./*.nupkg
-
-      - name: Publish to GitHub registry
-        # if it is a merge to default branch
-        if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-        run: dotnet nuget push ./*.nupkg --source https://nuget.pkg.github.com/${{github.repository_owner}}/index.json --api-key ${{ secrets.GITHUB_TOKEN }}
 
   build-windows-x64:
     runs-on: windows-latest
