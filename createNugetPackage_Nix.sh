@@ -8,7 +8,13 @@ fi
 
 if [ "$(uname)" == "Darwin" ]; 
 then
-    nuget pack CVODES_MacOS.nuspec -version $1
+    if [ "$(uname -m)" == "arm64" ]; 
+    then
+        nuget pack CVODES_MacOSArm64.nuspec -version $1
+    else
+        nuget pack CVODES_MacOSx64.nuspec -version $1
+    fi
+    
 else
     nuget pack CVODES_Ubuntu22.nuspec -version $1
 fi

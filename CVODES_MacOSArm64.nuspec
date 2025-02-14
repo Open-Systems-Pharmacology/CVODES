@@ -2,7 +2,7 @@
 <package >
   <metadata>    
     <description>Sundials CVODES Solver built for the Open Systems Pharmacology Suite.</description>
-    <id>CVODES.MacOS</id>
+    <id>CVODES.MacOSArm64</id>
     <version>$version$</version>
     <title>CVODES</title>
     <authors>Open-Systems-Pharmacology</authors>
