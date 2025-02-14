@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>    
+    <description>Sundials CVODES Solver built for the Open Systems Pharmacology Suite.</description>
+    <id>CVODES.MacOSArm64</id>
+    <version>$version$</version>
+    <title>CVODES</title>
+    <authors>Open-Systems-Pharmacology</authors>
+    <owners>Open-Systems-Pharmacology</owners>
+    <projectUrl>https://github.com/Open-Systems-Pharmacology/CVODES</projectUrl>
+    <licenseUrl>https://computing.llnl.gov/projects/sundials/license</licenseUrl>
+    <iconUrl>https://raw.githubusercontent.com/Open-Systems-Pharmacology/Suite/master/logo.png</iconUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <copyright>Copyright (c) 2002-2019, Lawrence Livermore National Security and Southern Methodist University</copyright>
+    <tags>open-systems-pharmacology native</tags>
+  </metadata>
+  <files>
+    <file src="src/CVODES/include/**/*.h" target="CVODES/include" />
+	<file src="BuildCVODES_MacOS/Release/ARM64/include/sundials/*.h" target="CVODES/include/sundials" />
+
+	<file src="Dist/MacOS/Release/ARM64/*.a" target="CVODES/bin/native/ARM64/Release" />
+	<file src="Dist/MacOS/Debug/ARM64/*.a" target="CVODES/bin/native/ARM64/Debug" />
+  </files>
+</package>
