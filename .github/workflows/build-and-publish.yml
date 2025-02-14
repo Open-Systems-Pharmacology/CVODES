@@ -157,6 +157,8 @@ jobs:
           IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
           mkdir Dist\Windows\Debug\x64
           IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+          for /R BuildCVODES_Windows\Debug\x64 %%F in (*.lib) do copy "%%F" Dist\Windows\Debug\x64\
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
         shell: cmd
 
       - name: build release
@@ -170,6 +172,8 @@ jobs:
           if exist Dist\Windows\Release\x64 rmdir /S /Q Dist\Windows\Release\x64
           IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
           mkdir Dist\Windows\Release\x64
+          IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+          for /R BuildCVODES_Windows\Release\x64 %%F in (*.lib) do copy "%%F" Dist\Windows\Release\x64\
           IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
         shell: cmd
 
