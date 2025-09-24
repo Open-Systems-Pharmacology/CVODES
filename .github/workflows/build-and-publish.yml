@@ -16,7 +16,7 @@ env:
 jobs:
 
   get-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       BUILD_ID: ${{ steps.get_build_id.outputs.BUILD_ID}}
       APP_VERSION: ${{ steps.get_app_version.outputs.APP_VERSION}}
@@ -82,7 +82,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-14
             nuget_package: CVODES.MacOS.Arm64
           - os: macos-13
             nuget_package: CVODES.MacOS.x64
@@ -128,7 +128,7 @@ jobs:
 
 
   build-windows-x64:
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: get-version
 
     steps:
