@@ -16,7 +16,7 @@ env:
 jobs:
 
   get-version:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ vars.GHA_DEFAULT_RUNNER_UBUNTU }}
     outputs:
       BUILD_ID: ${{ steps.get_build_id.outputs.BUILD_ID}}
       APP_VERSION: ${{ steps.get_app_version.outputs.APP_VERSION}}
@@ -82,11 +82,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-14
+          - os: ${{ vars.GHA_DEFAULT_RUNNER_MACOS }}
             nuget_package: CVODES.MacOS.Arm64
           - os: macos-13
             nuget_package: CVODES.MacOS.x64
-          - os: ubuntu-22.04
+          - os: ${{ vars.GHA_DEFAULT_RUNNER_UBUNTU }}
             nuget_package: CVODES.Ubuntu22
 
     runs-on: ${{ matrix.os }}
@@ -128,7 +128,7 @@ jobs:
 
 
   build-windows-x64:
-    runs-on: windows-2022
+    runs-on: ${{ vars.GHA_DEFAULT_RUNNER_WINDOWS }}
     needs: get-version
 
     steps:
