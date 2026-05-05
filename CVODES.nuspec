@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>CVODES</id>
+    <version>$version$</version>
+    <title>CVODES</title>
+    <authors>Open-Systems-Pharmacology</authors>
+    <owners>Open-Systems-Pharmacology</owners>
+    <description>Sundials CVODES Solver built for the Open Systems Pharmacology Suite.</description>
+    <projectUrl>https://github.com/Open-Systems-Pharmacology/CVODES</projectUrl>
+    <license type="file">LICENSE</license>
+    <icon>logo.png</icon>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <copyright>Copyright (c) 2002-2021, Lawrence Livermore National Security and Southern Methodist University</copyright>
+    <tags>open-systems-pharmacology native</tags>
+  </metadata>
+  <files>
+    <file src="LICENSE" />
+    <file src="logo.png" />
+
+    <file src="_._" target="lib\net10.0" />
+
+    <file src="src\CVODES\include\**\*.h" target="CVODES\include" />
+    <file src="BuildCVODES_Windows\Release\x64\include\sundials\*.h" target="CVODES\include\sundials" />
+
+    <file src="runtimes\win-x64\native\sundials_cvodes.lib" target="runtimes\win-x64\native" />
+    <file src="runtimes\linux-x64\native\libsundials_cvodes.a" target="runtimes\linux-x64\native" />
+    <file src="runtimes\osx-arm64\native\libsundials_cvodes.a" target="runtimes\osx-arm64\native" />
+  </files>
+</package>

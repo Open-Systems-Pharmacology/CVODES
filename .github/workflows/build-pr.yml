@@ -1,17 +1,18 @@
-name: Build and Publish NuGet Package for all supported platforms
+name: Build PR for all supported platforms
 
 on:
-  push:
+  pull_request:
     branches:
     - main
 
 permissions:
-  packages: write
+  packages: read
+  contents: read
 
 jobs:
   build:
     uses: ./.github/workflows/_build.yml
     with:
       app_version: 5.8.0.${{ github.run_id }}
-      publish: true
+      publish: false
     secrets: inherit
