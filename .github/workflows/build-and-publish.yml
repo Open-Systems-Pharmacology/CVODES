@@ -12,6 +12,6 @@ jobs:
   build:
     uses: ./.github/workflows/_build.yml
     with:
-      app_version: 5.8.0.${{ github.run_id }}
+      app_version: 5.8.0.${{ github.run_number }}
       publish: true
     secrets: inherit
