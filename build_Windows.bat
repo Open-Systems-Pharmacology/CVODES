@@ -1,8 +1,18 @@
-@echo off
+@echo on
 setlocal
 
 if not exist BuildCVODES_Windows mkdir BuildCVODES_Windows
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+
+rem Locate Visual Studio via vswhere so this script works regardless of edition
+rem (Community/Professional/Enterprise) and on GitHub-hosted runners.
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "%VSWHERE%" set "VSWHERE=vswhere"
+for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS_INSTALL=%%i"
+if not defined VS_INSTALL (
+    echo Could not locate a Visual Studio install with VC++ tools via vswhere.
+    exit /b 1
+)
+call "%VS_INSTALL%\VC\Auxiliary\Build\vcvars64.bat"
 IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
 
 rem ---- TODO enable and adjust the code below as soon as SuiteSparse is added
@@ -25,21 +35,19 @@ rem 	cp -p Include\*.h ..\..\..\BuildSuiteSparse\include\
 rem done
 rem cd ..\..\..
 
-for %%T in (Debug Release) do (
-    echo Compiling for build type = %%T   
-    cmake -BBuildCVODES_Windows/%%T/x64/ -Hsrc/CVODES/ -DCMAKE_BUILD_TYPE=%%T -DEXAMPLES_ENABLE_C=OFF -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DENABLE_KLU=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DKLU_INCLUDE_DIR=BuildSuiteSparse/include/ -DKLU_LIBRARY_DIR=BuildSuiteSparse/lib64/ -DCMAKE_C_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Oi"
-    IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
-    msbuild BuildCVODES_Windows/%%T/x64/ALL_BUILD.vcxproj /property:Configuration=%%T
-    IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
-    if exist Dist\Windows\%%T\x64 rmdir /S /Q Dist\Windows\%%T\x64
-    IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
-    mkdir Dist\Windows\%%T\x64
-    IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
-)
-
-for /R BuildCVODES_Windows\Debug\x64 %%F in (*.lib) do copy "%%F" Dist\Windows\Debug\x64\
+cmake -BBuildCVODES_Windows/Release/x64/ -Hsrc/CVODES/ -DCMAKE_BUILD_TYPE=Release -DEXAMPLES_ENABLE_C=OFF -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DENABLE_KLU=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DKLU_INCLUDE_DIR=BuildSuiteSparse/include/ -DKLU_LIBRARY_DIR=BuildSuiteSparse/lib64/ -DCMAKE_C_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Oi"
 IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
-for /R BuildCVODES_Windows\Release\x64 %%F in (*.lib) do copy "%%F" Dist\Windows\Release\x64\
+msbuild BuildCVODES_Windows/Release/x64/ALL_BUILD.vcxproj /property:Configuration=Release
+IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+
+if exist runtimes\win-x64\native rmdir /S /Q runtimes\win-x64\native
+IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+mkdir runtimes\win-x64\native
+IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+
+rem `for /R ... in (literal-name)` iterates every subdirectory regardless of
+rem match — use dir /s /b so we only copy actual matches.
+for /f "delims=" %%F in ('dir /s /b /a-d "BuildCVODES_Windows\Release\x64\sundials_cvodes.lib" 2^>nul') do copy "%%F" runtimes\win-x64\native\
 IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
 
 endlocal
