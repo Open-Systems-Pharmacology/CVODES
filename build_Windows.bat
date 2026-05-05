@@ -45,7 +45,9 @@ IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
 mkdir runtimes\win-x64\native
 IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
 
-for /R BuildCVODES_Windows\Release\x64 %%F in (sundials_cvodes.lib) do copy "%%F" runtimes\win-x64\native\
+rem `for /R ... in (literal-name)` iterates every subdirectory regardless of
+rem match — use dir /s /b so we only copy actual matches.
+for /f "delims=" %%F in ('dir /s /b /a-d "BuildCVODES_Windows\Release\x64\sundials_cvodes.lib" 2^>nul') do copy "%%F" runtimes\win-x64\native\
 IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
 
 endlocal
