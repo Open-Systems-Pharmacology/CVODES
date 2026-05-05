@@ -1,8 +1,18 @@
-@echo off
+@echo on
 setlocal
 
 if not exist BuildCVODES_Windows mkdir BuildCVODES_Windows
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+
+rem Locate Visual Studio via vswhere so this script works regardless of edition
+rem (Community/Professional/Enterprise) and on GitHub-hosted runners.
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "%VSWHERE%" set "VSWHERE=vswhere"
+for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS_INSTALL=%%i"
+if not defined VS_INSTALL (
+    echo Could not locate a Visual Studio install with VC++ tools via vswhere.
+    exit /b 1
+)
+call "%VS_INSTALL%\VC\Auxiliary\Build\vcvars64.bat"
 IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
 
 rem ---- TODO enable and adjust the code below as soon as SuiteSparse is added
