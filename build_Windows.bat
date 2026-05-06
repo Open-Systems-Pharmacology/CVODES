@@ -50,4 +50,14 @@ rem match — use dir /s /b so we only copy actual matches.
 for /f "delims=" %%F in ('dir /s /b /a-d "BuildCVODES_Windows\Release\x64\sundials_cvodes.lib" 2^>nul') do copy "%%F" runtimes\win-x64\native\
 IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
 
+rem Stage the platform-specific generated sundials/*.h headers
+rem (sundials_export.h etc) next to the static lib. These are CMake-generated
+rem per-build and contain compiler-specific macros (__declspec on MSVC), so
+rem each runtime needs its own copy. The unified CVODES.nuspec sources them
+rem from here.
+mkdir runtimes\win-x64\native\include\sundials
+IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+copy BuildCVODES_Windows\Release\x64\include\sundials\*.h runtimes\win-x64\native\include\sundials\
+IF %ERRORLEVEL% NEQ 0 EXIT /B %ERRORLEVEL%
+
 endlocal

@@ -20,8 +20,18 @@
 
     <file src="_._" target="lib\net10.0" />
 
+    <!-- Cross-platform headers from the source tree. Consumers add
+         packages/CVODES/CVODES/include to their include path. -->
     <file src="src\CVODES\include\**\*.h" target="CVODES\include" />
-    <file src="BuildCVODES_Windows\Release\x64\include\sundials\*.h" target="CVODES\include\sundials" />
+
+    <!-- Platform-specific generated headers (sundials_export.h, sundials_config.h,
+         sundials_fconfig.h). CMake's generate_export_header emits compiler-
+         specific macros (__declspec on MSVC vs __attribute__ on gcc/clang), so
+         each runtime ships its own copy. Consumers add
+         packages/CVODES/runtimes/<rid>/native/include to their include path. -->
+    <file src="runtimes\win-x64\native\include\sundials\*.h"   target="runtimes\win-x64\native\include\sundials" />
+    <file src="runtimes\linux-x64\native\include\sundials\*.h" target="runtimes\linux-x64\native\include\sundials" />
+    <file src="runtimes\osx-arm64\native\include\sundials\*.h" target="runtimes\osx-arm64\native\include\sundials" />
 
     <file src="runtimes\win-x64\native\sundials_cvodes.lib" target="runtimes\win-x64\native" />
     <file src="runtimes\linux-x64\native\libsundials_cvodes.a" target="runtimes\linux-x64\native" />
