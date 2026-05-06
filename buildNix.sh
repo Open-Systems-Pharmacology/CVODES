@@ -48,3 +48,11 @@ make -C BuildCVODES_${Platform}/Release/${Arch}/
 
 mkdir -p runtimes/${RID}/native
 find ./BuildCVODES_${Platform}/Release/${Arch} -name 'libsundials_cvodes.a' -exec cp {} runtimes/${RID}/native/ \;
+
+# Stage the platform-specific generated sundials/*.h headers (sundials_export.h
+# etc) next to the static lib. These are CMake-generated per-build and contain
+# compiler-specific macros (__declspec on MSVC vs __attribute__ on gcc/clang),
+# so each runtime needs its own copy. The unified CVODES.nuspec sources them
+# from here.
+mkdir -p runtimes/${RID}/native/include/sundials
+cp BuildCVODES_${Platform}/Release/${Arch}/include/sundials/*.h runtimes/${RID}/native/include/sundials/

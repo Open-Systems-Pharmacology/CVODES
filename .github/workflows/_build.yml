@@ -24,10 +24,8 @@ jobs:
         include:
           - os: ${{ vars.GHA_DEFAULT_RUNNER_MACOS }}
             rid: osx-arm64
-            native_file: libsundials_cvodes.a
           - os: ${{ vars.GHA_DEFAULT_RUNNER_UBUNTU }}
             rid: linux-x64
-            native_file: libsundials_cvodes.a
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -41,11 +39,15 @@ jobs:
           chmod ugo+x buildNix.sh
           ./buildNix.sh
 
+      # Upload the whole staged native/ tree (static lib + generated
+      # sundials/*.h headers). The headers are CMake-generated and
+      # compiler-specific, so the Windows packer cannot regenerate them — they
+      # have to ride along in the artifact.
       - name: Upload native artifact
         uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}
-          path: runtimes/${{ matrix.rid }}/native/${{ matrix.native_file }}
+          path: runtimes/${{ matrix.rid }}/native
 
   build-windows-and-pack:
     runs-on: ${{ vars.GHA_DEFAULT_RUNNER_WINDOWS }}
